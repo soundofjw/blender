@@ -161,15 +161,21 @@ void USDCurvesReader::read_curve_sample(Curves *cu, const double motionSampleTim
   }
 
   if (usdWidths.size()) {
-    if (!geometry.radius) {
+    /*if (!geometry.radius) {
       geometry.radius = static_cast<float *>(CustomData_add_layer_named(
           &geometry.point_data, CD_PROP_FLOAT, CD_DEFAULT, nullptr, geometry.point_num, "radius"));
-    }
+    }*/
+    bke::SpanAttributeWriter<float> radius_attribute =
+        geometry.attributes_for_write().lookup_or_add_for_write_only_span<float>(
+            "radius", ATTR_DOMAIN_POINT);
+    MutableSpan<float> radii = radius_attribute.span;
+
     for (const int i_curve : geometry.curves_range()) {
       for (const int i_point : geometry.points_for_curve(i_curve)) {
-        geometry.radius[i_point] = usdWidths[i_point];
+        radii[i_point] = usdWidths[i_point];
       }
     }
+    radius_attribute.finish();
   }
 }
 

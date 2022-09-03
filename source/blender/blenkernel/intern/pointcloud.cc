@@ -50,6 +50,7 @@ using blender::Vector;
 /* PointCloud datablock */
 
 static void pointcloud_random(PointCloud *pointcloud);
+void BKE_pointcloud_update_customdata_pointers(PointCloud *pointcloud);
 
 const char *POINTCLOUD_ATTR_POSITION = "position";
 const char *POINTCLOUD_ATTR_RADIUS = "radius";
@@ -340,6 +341,14 @@ BoundBox *BKE_pointcloud_boundbox_get(Object *ob)
   BKE_boundbox_init_from_minmax(ob->runtime.bb, min, max);
 
   return ob->runtime.bb;
+}
+
+void BKE_pointcloud_update_customdata_pointers(PointCloud *pointcloud)
+{
+  /*pointcloud->co = CustomData_get_layer_named(
+      &pointcloud->pdata, CD_PROP_FLOAT3, POINTCLOUD_ATTR_POSITION);
+  pointcloud->radius = CustomData_get_layer_named(
+      &pointcloud->pdata, CD_PROP_FLOAT, POINTCLOUD_ATTR_RADIUS);*/
 }
 
 bool BKE_pointcloud_customdata_required(const PointCloud *UNUSED(pointcloud), const char *name)

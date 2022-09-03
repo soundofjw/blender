@@ -29,7 +29,7 @@
 
 #include "BLT_translation.h"
 
-#include "BKE_attribute_access.hh"
+#include "BKE_attribute.h"
 #include "BKE_customdata.h"
 #include "BKE_mesh.h"
 
@@ -337,7 +337,7 @@ static std::optional<eAttrDomain> matching_domain(const GeometryComponent &geome
                  "received unsupported domain in matching_domain");
 
   if (requested_domain != ATTR_DOMAIN_AUTO) {
-    if (geometry_component.attribute_domain_num(requested_domain) * dimensions != num_values) {
+    if (geometry_component.attribute_domain_size(requested_domain) * dimensions != num_values) {
       /* The size of the requested domain does not match what we have, mark as invalid. */
       return {};
     }
@@ -359,7 +359,7 @@ static std::optional<eAttrDomain> matching_domain(const GeometryComponent &geome
   };
 
   for (const eAttrDomain supported_domain : supported_domains) {
-    if (geometry_component.attribute_domain_num(supported_domain) * dimensions != num_values) {
+    if (geometry_component.attribute_domain_size(supported_domain) * dimensions != num_values) {
       continue;
     }
     domain_bits |= (1 << supported_domain);
@@ -777,7 +777,7 @@ static bool can_add_vertex_color_layer(const CDStreamConfig &config)
   if (config.mesh == nullptr) {
     return false;
   }
-  return can_add_custom_data_layer(&config.mesh->ldata, CD_PROP_BYTE_COLOR, MAX_MCOL);
+  return true;  // joshw: no max mcol?
 }
 
 /* Check if we do not already have reached the maximum allowed number of UV layers. */
@@ -807,6 +807,9 @@ static void iterate_attribute_loop_domain(const CDStreamConfig &config,
   }
 
   Mesh *mesh = config.mesh;
+  if (mesh == nullptr) {
+    std::cerr << "Mesh is missing during Alembic import.\n";
+  }
   MPoly *mpolys = mesh->mpoly;
   MLoop *mloops = mesh->mloop;
   unsigned int loop_index, rev_loop_index;
@@ -851,6 +854,32 @@ static CustomDataLayer *ensure_attribute_on_domain(ID *id,
   return BKE_id_attribute_new(id, name, cd_type, domain, nullptr);
 }
 
+static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
+{
+  eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
+  void *cd_ptr;
+  CustomData *loopdata;
+  int numloops;
+
+  /* unsupported custom data type -- don't do anything. */
+  if (!ELEM(cd_data_type, CD_MLOOPUV)) {
+    return NULL;
+  }
+
+  loopdata = &mesh->ldata;
+  cd_ptr = CustomData_get_layer_named(loopdata, cd_data_type, name);
+  if (cd_ptr != NULL) {
+    /* layer already exists, so just return it. */
+    return cd_ptr;
+  }
+
+  /* Create a new layer. */
+  numloops = mesh->totloop;
+  cd_ptr = CustomData_add_layer_named(
+      loopdata, cd_data_type, CD_SET_DEFAULT, NULL, numloops, name);
+  return cd_ptr;
+}
+
 /* Main entry point for creating a custom data layer from an Alembic attribute.
  *
  * The callback is responsible for filling the custom data layer, one value at a time. Its
@@ -875,15 +904,25 @@ static void create_layer_for_domain(const CDStreamConfig &config,
   BLI_assert(target_domain != ATTR_DOMAIN_AUTO);
 
   GeometryComponent &geometry_component = *config.geometry_component;
-  MutableSpan<BlenderType> span;
-
   /* These layer types cannot be created via the geometry component. */
-  if (ELEM(cd_type, CD_PROP_BYTE_COLOR, CD_ORCO, CD_MLOOPUV)) {
-    CustomDataLayer *layer = ensure_attribute_on_domain(
-        &config.mesh->id, name.c_str(), cd_type, target_domain);
+  if (ELEM(cd_type, CD_ORCO, CD_MLOOPUV)) {
+    /*CustomDataLayer *layer = ensure_attribute_on_domain(
+        &config.mesh->id, name.c_str(), cd_type, target_domain);*/
+    void *data = add_customdata_cb(config.mesh, name.c_str(), cd_type);
 
-    BlenderType *layer_data = static_cast<BlenderType *>(layer->data);
-    span = MutableSpan(layer_data, geometry_component.attribute_domain_num(target_domain));
+    BlenderType *layer_data = static_cast<BlenderType *>(data);
+    MutableSpan<BlenderType> span = MutableSpan(
+        layer_data, geometry_component.attribute_domain_size(target_domain));
+
+    if (target_domain == ATTR_DOMAIN_CORNER) {
+      iterate_attribute_loop_domain(config, span, source_domain, callback);
+      return;
+    }
+
+    /* Other domains can be simply iterated. */
+    for (const int64_t i : span.index_range()) {
+      span[i] = callback(i);
+    }
   }
   else {
     bke::AttributeIDRef attribute_id(name);
@@ -891,36 +930,30 @@ static void create_layer_for_domain(const CDStreamConfig &config,
     /* Try to remove any attribute with the same name. It might have been loaded
      * on a different domain or with a different data type (e.g. if vectors are
      * flattened during exports). */
-    if (geometry_component.attribute_exists(attribute_id)) {
-      if (!geometry_component.attribute_try_delete(attribute_id)) {
+    if (geometry_component.attributes()->contains(attribute_id)) {
+      if (!geometry_component.attributes_for_write()->remove(attribute_id)) {
         return;
       }
     }
 
-    if (!geometry_component.attribute_try_create(
-            attribute_id, target_domain, cd_type, AttributeInitDefault())) {
+    bke::SpanAttributeWriter<BlenderType> write_attribute =
+        geometry_component.attributes_for_write()->lookup_or_add_for_write_only_span<BlenderType>(
+            attribute_id, target_domain);
+    /* We just created the attribute, it should exist. */
+    BLI_assert(write_attribute);
+
+    if (target_domain == ATTR_DOMAIN_CORNER) {
+      iterate_attribute_loop_domain(config, write_attribute.span, source_domain, callback);
+      write_attribute.finish();
       return;
     }
 
-    bke::WriteAttributeLookup write_attribute = geometry_component.attribute_try_get_for_write(
-        attribute_id);
-
-    if (!write_attribute) {
-      return;
+    /* Other domains can be simply iterated. */
+    for (const int64_t i : write_attribute.span.index_range()) {
+      write_attribute.span[i] = callback(i);
     }
 
-    VMutableArray<BlenderType> varray = write_attribute.varray.typed<BlenderType>();
-    span = varray.get_internal_span();
-  }
-
-  if (target_domain == ATTR_DOMAIN_CORNER) {
-    iterate_attribute_loop_domain(config, span, source_domain, callback);
-    return;
-  }
-
-  /* Other domains can be simply iterated. */
-  for (const int64_t i : span.index_range()) {
-    span[i] = callback(i);
+    write_attribute.finish();
   }
 }
 

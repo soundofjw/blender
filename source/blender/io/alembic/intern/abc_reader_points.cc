@@ -133,6 +133,31 @@ static void read_points_sample(const IPointsSchema &schema,
   read_points(positions, r_points);
 }
 
+static void *add_customdata_pd(PointCloud *point_cloud, const char *name, int data_type)
+{
+  eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
+  void *cd_ptr;
+  CustomData *pdata;
+  int totpoint;
+
+  /* unsupported custom data type -- don't do anything. */
+  if (!ELEM(cd_data_type, CD_MVERT)) {
+    return NULL;
+  }
+
+  pdata = &point_cloud->pdata;
+  cd_ptr = CustomData_get_layer_named(pdata, cd_data_type, name);
+  if (cd_ptr != NULL) {
+    /* layer already exists, so just return it. */
+    return cd_ptr;
+  }
+
+  /* Create a new layer. */
+  totpoint = point_cloud->totpoint;
+  cd_ptr = CustomData_add_layer_named(pdata, cd_data_type, CD_SET_DEFAULT, NULL, totpoint, name);
+  return cd_ptr;
+}
+
 void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
                                     const Alembic::Abc::ISampleSelector &sample_sel,
                                     const AttributeReadingHelper &attribute_helper,
@@ -141,6 +166,7 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
                                     const char **err_str)
 {
   BLI_assert(geometry_set.has_pointcloud());
+
 
   IPointsSchema::Sample sample;
   try {
@@ -156,8 +182,10 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
     return;
   }
 
+
   PointCloud *existing_point_cloud = geometry_set.get_pointcloud_for_write();
   PointCloud *point_cloud = existing_point_cloud;
+
 
   const P3fArraySamplePtr &positions = sample.getPositions();
 
@@ -184,29 +212,33 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
       config.geometry_component.get());
   component->replace(point_cloud, GeometryOwnershipType::Editable);
 
-  bke::OutputAttribute_Typed<float3> point_positions =
-      component->attribute_try_get_for_output_only<float3>("position", ATTR_DOMAIN_POINT);
-  read_points_sample(m_schema, sample_sel, config, point_positions.as_span());
-  point_positions.save();
+  std::optional<bke::MutableAttributeAccessor> point_attributes =
+      component->attributes_for_write();
 
-  bke::OutputAttribute_Typed<float> point_radii =
-      component->attribute_try_get_for_output_only<float>("radius", ATTR_DOMAIN_POINT);
+  void *pointsdata = add_customdata_pd(point_cloud, "position", CD_MVERT);
+  float3 *layer_data = static_cast<float3 *>(pointsdata);
+  MutableSpan<float3> pointSpan = MutableSpan(layer_data, point_cloud->totpoint);
+  read_points_sample(m_schema, sample_sel, config, pointSpan);
 
-  MutableSpan<float> point_radii_span = point_radii.as_span();
+
+  bke::SpanAttributeWriter<float> point_radii =
+      point_attributes->lookup_or_add_for_write_span<float>("radius", ATTR_DOMAIN_POINT);
+  MutableSpan<float> point_radii_span = point_radii.span;
 
   if (radii) {
-    for (size_t i = 0; i < radii->size(); i++) {
+    for (const int64_t i : point_radii_span.index_range()) {
       point_radii_span[i] = (*radii)[i];
     }
   }
   else {
     point_radii_span.fill(0.01f);
   }
-  point_radii.save();
+  point_radii.finish();
 
   read_arbitrary_attributes(config, m_schema, {}, sample_sel, velocity_scale);
 
   geometry_set.replace_pointcloud(point_cloud);
+
 }
 
 }  // namespace blender::io::alembic

@@ -342,7 +342,7 @@ static std::pair<bool, AbcObjectReader *> visit_object(
     /* Pass, those are handled in the mesh reader. */
   }
   else if (ICurves::matches(md)) {
-    if (U.experimental.use_new_curves_type) {
+    if (U.experimental.use_new_curves_tools) {
       reader = new AbcCurveReader(object, settings);
       parent_is_part_of_this_object = true;
     }
@@ -514,6 +514,7 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
   std::vector<AbcObjectReader *>::iterator iter;
   for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
     AbcObjectReader *reader = *iter;
+    std::cerr << "joshw: reader: " << reader << "\n";
 
     if (reader->valid()) {
       reader->readObjectData(data->bmain, sample_sel);
@@ -535,6 +536,8 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
     }
   }
 
+  std::cerr << "joshw: readObjectData ALL done.\n";
+
   if (data->settings.set_frame_range) {
     Scene *scene = data->scene;
 
@@ -550,10 +553,14 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
     }
   }
 
+  std::cerr << "joshw: parenthood.\n";
+
   /* Setup parenthood. */
   for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
     const AbcObjectReader *reader = *iter;
+    std::cerr << "joshw: parenthood: " << reader << "\n";
     const AbcObjectReader *parent_reader = reader->parent_reader;
+    std::cerr << "joshw: ob-set.\n";
     Object *ob = reader->object();
 
     if (parent_reader == nullptr || !reader->inherits_xform()) {
@@ -564,11 +571,14 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
     }
   }
 
+  std::cerr << "joshw: transformations.\n";
   /* Setup transformations and constraints. */
   i = 0;
   for (iter = data->readers.begin(); iter != data->readers.end(); ++iter) {
     AbcObjectReader *reader = *iter;
+    std::cerr << "joshw: setupObjectTransform: " << reader << "\n";
     reader->setupObjectTransform(0.0);
+    std::cerr << "joshw: setupObjectTransform done.\n";
 
     *data->progress = 0.7f + 0.3f * (++i / size);
     *data->do_update = true;
@@ -578,11 +588,14 @@ static void import_startjob(void *user_data, short *stop, short *do_update, floa
       return;
     }
   }
+
+  std::cerr << "joshw: import_startjob done.\n";
 }
 
 static void import_endjob(void *user_data)
 {
   SCOPE_TIMER("Alembic import, cleanup");
+  std::cerr << "joshw: import_endjob\n";
 
   ImportJobData *data = static_cast<ImportJobData *>(user_data);
 
@@ -610,28 +623,38 @@ static void import_endjob(void *user_data)
     lc = BKE_layer_collection_get_active(view_layer);
 
     /* Add all objects to the collection (don't do sync for each object). */
+    std::cerr << "joshw: BKE_layer_collection_resync_forbid\n";
     BKE_layer_collection_resync_forbid();
     for (AbcObjectReader *reader : data->readers) {
       Object *ob = reader->object();
+      std::cerr << "joshw: BKE_collection_object_add\n";
       BKE_collection_object_add(data->bmain, lc->collection, ob);
     }
     /* Sync the collection, and do view layer operations. */
+    std::cerr << "joshw: BKE_layer_collection_resync_allow\n";
     BKE_layer_collection_resync_allow();
+    std::cerr << "joshw: BKE_main_collection_sync\n";
     BKE_main_collection_sync(data->bmain);
     for (AbcObjectReader *reader : data->readers) {
       Object *ob = reader->object();
+      std::cerr << "joshw: BKE_view_layer_base_find\n";
       base = BKE_view_layer_base_find(view_layer, ob);
       /* TODO: is setting active needed? */
+      std::cerr << "joshw: BKE_view_layer_base_select_and_set_active\n";
       BKE_view_layer_base_select_and_set_active(view_layer, base);
 
+      std::cerr << "joshw: DEG_id_tag_update\n";
       DEG_id_tag_update(&lc->collection->id, ID_RECALC_COPY_ON_WRITE);
+      std::cerr << "joshw: DEG_id_tag_update_ex\n";
       DEG_id_tag_update_ex(data->bmain,
                            &ob->id,
                            ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_ANIMATION |
                                ID_RECALC_BASE_FLAGS);
     }
 
+    std::cerr << "joshw: DEG_id_tag_update\n";
     DEG_id_tag_update(&data->scene->id, ID_RECALC_BASE_FLAGS);
+    std::cerr << "joshw: DEG_relations_tag_update\n";
     DEG_relations_tag_update(data->bmain);
 
     if (data->is_background_job) {
@@ -641,6 +664,7 @@ static void import_endjob(void *user_data)
     }
   }
 
+  std::cerr << "joshw: decrefs\n";
   for (AbcObjectReader *reader : data->readers) {
     reader->decref();
 
@@ -649,6 +673,7 @@ static void import_endjob(void *user_data)
     }
   }
 
+  std::cerr << "joshw: WM_set_locked_interface\n";
   WM_set_locked_interface(data->wm, false);
 
   switch (data->error_code) {
@@ -661,7 +686,9 @@ static void import_endjob(void *user_data)
       break;
   }
 
+  std::cerr << "joshw: WM_main_add_notifier\n";
   WM_main_add_notifier(NC_SCENE | ND_FRAME, data->scene);
+  std::cerr << "joshw: report_job_duration\n";
   report_job_duration(data);
 }
 

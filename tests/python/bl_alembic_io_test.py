@@ -483,10 +483,12 @@ class AttributeFlattenedAttributesRemappingTest(AbstractAlembicTest):
         cache = bpy.data.cache_files[fname]
 
         cache.attribute_mappings.new(name="RND_CLR_PNT", mapping_type='MAP_TO_COLOR', domain="POINT")
-        vector_point_remap = cache.attribute_mappings.new(name="RND_VEC_PNT", mapping_type='MAP_TO_FLOAT3', domain="POINT")
+        vector_point_remap = cache.attribute_mappings.new(
+            name="RND_VEC_PNT", mapping_type='MAP_TO_FLOAT3', domain="POINT")
 
         cache.attribute_mappings.new(name="RND_CLR_FAC", mapping_type='MAP_TO_COLOR', domain="FACE")
-        vector_face_remap = cache.attribute_mappings.new(name="RND_VEC_FAC", mapping_type='MAP_TO_FLOAT3', domain="FACE")
+        vector_face_remap = cache.attribute_mappings.new(
+            name="RND_VEC_FAC", mapping_type='MAP_TO_FLOAT3', domain="FACE")
 
         cache.attribute_mappings.new(name="UVMap", mapping_type='MAP_TO_FLOAT2', domain="FACE_CORNER")
 

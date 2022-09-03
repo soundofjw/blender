@@ -25,8 +25,8 @@
 #include "BLI_listbase.h"
 #include "BLI_math_geom.h"
 
-#include "BKE_geometry_set.hh"
 #include "BKE_attribute.hh"
+#include "BKE_geometry_set.hh"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
@@ -314,43 +314,6 @@ static void process_normals(CDStreamConfig &config,
       process_no_normals(config);
       break;
   }
-}
-
-BLI_INLINE void read_uvs_params(CDStreamConfig &config,
-                                AbcMeshData &abc_data,
-                                const IV2fGeomParam &uv,
-                                const ISampleSelector &selector)
-{
-  if (!uv.valid()) {
-    return;
-  }
-
-  IV2fGeomParam::Sample uvsamp;
-  uv.getIndexed(uvsamp, selector);
-
-  UInt32ArraySamplePtr uvs_indices = uvsamp.getIndices();
-
-  const AbcUvScope uv_scope = get_uv_scope(uv.getScope(), config, uvs_indices);
-
-  if (uv_scope == ABC_UV_SCOPE_NONE) {
-    return;
-  }
-
-  abc_data.uv_scope = uv_scope;
-  abc_data.uvs = uvsamp.getVals();
-  abc_data.uvs_indices = uvs_indices;
-
-  std::string name = Alembic::Abc::GetSourceName(uv.getMetaData());
-
-  /* According to the convention, primary UVs should have had their name
-   * set using Alembic::Abc::SetSourceName, but you can't expect everyone
-   * to follow it! :) */
-  if (name.empty()) {
-    name = uv.getName();
-  }
-
-  void *cd_ptr = config.add_customdata_cb(config.mesh, name.c_str(), CD_MLOOPUV);
-  config.mloopuv = static_cast<MLoopUV *>(cd_ptr);
 }
 
 static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
@@ -759,8 +722,7 @@ BLI_INLINE MEdge *find_edge(MEdge *edges, int totedge, int v1, int v2)
   return nullptr;
 }
 
-static void read_subd_sample(const std::string &iobject_full_name,
-                             ImportSettings *settings,
+static void read_subd_sample(ImportSettings *settings,
                              const ISubDSchema &schema,
                              const ISampleSelector &selector,
                              CDStreamConfig &config)

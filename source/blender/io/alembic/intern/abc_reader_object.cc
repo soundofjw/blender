@@ -154,24 +154,34 @@ void AbcObjectReader::setupObjectTransform(const chrono_t time)
   bool is_constant = false;
   float transform_from_alembic[4][4];
 
+  std::cerr << "joshw setupObjectTransform: setupObjectTransform type: " << m_object->type
+            << "?\n";
   /* If the parent is a camera, apply the inverse rotation to make up for the from-Maya rotation.
    * This assumes that the parent object also was imported from Alembic. */
   if (m_object->parent != nullptr && m_object->parent->type == OB_CAMERA) {
+    std::cerr << "joshw setupObjectTransform: axis_angle_to_mat4_single\n";
     axis_angle_to_mat4_single(m_object->parentinv, 'X', -M_PI_2);
   }
 
+  std::cerr << "joshw setupObjectTransform: read_matrix\n";
   this->read_matrix(transform_from_alembic, time, m_settings->scale, is_constant);
 
   /* Apply the matrix to the object. */
+  std::cerr << "joshw setupObjectTransform: BKE_object_apply_mat4\n";
   BKE_object_apply_mat4(m_object, transform_from_alembic, true, false);
+  std::cerr << "joshw setupObjectTransform: BKE_object_to_mat4\n";
   BKE_object_to_mat4(m_object, m_object->obmat);
 
   if (!is_constant || m_settings->always_add_cache_reader) {
+    std::cerr << "joshw setupObjectTransform: BKE_constraint_add_for_object\n";
     bConstraint *con = BKE_constraint_add_for_object(
         m_object, nullptr, CONSTRAINT_TYPE_TRANSFORM_CACHE);
+
+    std::cerr << "joshw setupObjectTransform: BLI_strncpy\n";
     bTransformCacheConstraint *data = static_cast<bTransformCacheConstraint *>(con->data);
     BLI_strncpy(data->object_path, m_iobject.getFullName().c_str(), FILE_MAX);
 
+    std::cerr << "joshw setupObjectTransform: data->cache_file = m_settings->cache_file\n";
     data->cache_file = m_settings->cache_file;
     id_us_plus(&data->cache_file->id);
   }
@@ -179,6 +189,11 @@ void AbcObjectReader::setupObjectTransform(const chrono_t time)
 
 Alembic::AbcGeom::IXform AbcObjectReader::xform()
 {
+  // joshw: what to do with pointcloud? skip.
+  if (m_object != nullptr && m_object->type == OB_POINTCLOUD) {
+    return IXform();
+  }
+
   /* Check that we have an empty object (locator, bone head/tail...). */
   if (IXform::matches(m_iobject.getMetaData())) {
     try {
