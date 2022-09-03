@@ -341,8 +341,10 @@ static std::pair<bool, AbcObjectReader *> visit_object(
     /* Pass, those are handled in the mesh reader. */
   }
   else if (ICurves::matches(md)) {
-    reader = new AbcCurveReader(object, settings);
-    parent_is_part_of_this_object = true;
+    if (U.experimental.use_new_curves_type) {
+      reader = new AbcCurveReader(object, settings);
+      parent_is_part_of_this_object = true;
+    }
   }
   else {
     std::cerr << "Alembic object " << full_name << " is of unsupported schema type '"
@@ -782,24 +784,29 @@ static ISampleSelector sample_selector_for_time(chrono_t time)
   return ISampleSelector(time, ISampleSelector::kFloorIndex);
 }
 
-Mesh *ABC_read_mesh(CacheReader *reader,
-                    Object *ob,
-                    Mesh *existing_mesh,
-                    const ABCReadParams *params,
-                    const char **err_str)
+void ABC_read_geometry(CacheReader *reader,
+                       Object *ob,
+                       GeometrySet &geometry_set,
+                       const ABCReadParams *params,
+                       const char **err_str)
 {
   AbcObjectReader *abc_reader = get_abc_reader(reader, ob, err_str);
   if (abc_reader == nullptr) {
-    return nullptr;
+    return;
   }
 
+  AttributeReadingHelper attribute_helper(params->mappings);
+  attribute_helper.set_velocity_attribute_name(params->velocity_name);
+  attribute_helper.set_read_flags(params->read_flags);
+  attribute_helper.set_attribute_reading_error_pointer(params->attribute_reading_error);
+
   ISampleSelector sample_sel = sample_selector_for_time(params->time);
-  return abc_reader->read_mesh(existing_mesh,
-                               sample_sel,
-                               params->read_flags,
-                               params->velocity_name,
-                               params->velocity_scale,
-                               err_str);
+  return abc_reader->read_geometry(geometry_set,
+                                   sample_sel,
+                                   attribute_helper,
+                                   params->read_flags,
+                                   params->velocity_scale,
+                                   err_str);
 }
 
 bool ABC_mesh_topology_changed(CacheReader *reader,

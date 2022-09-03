@@ -35,10 +35,16 @@ class USDNurbsReader : public USDGeomReader {
 
   void read_curve_sample(Curve *cu, double motionSampleTime);
 
+  void read_geometry(GeometrySet &geometry_set,
+                     double motionSampleTime,
+                     int read_flag,
+                     const char **err_str) override;
+
+ private:
   Mesh *read_mesh(struct Mesh *existing_mesh,
                   double motionSampleTime,
                   int read_flag,
-                  const char **err_str) override;
+                  const char **err_str);
 };
 
 }  // namespace blender::io::usd

@@ -2184,6 +2184,13 @@ typedef struct MeshSeqCacheModifierData {
   /* Runtime. */
   struct CacheReader *reader;
   char reader_object_path[1024];
+
+  /* Error message for when attribute loading fails. We could use #BKE_modifier_set_error, however,
+   * this makes unit tests fail as it considers the error as fatal. Not being able to load an
+   * attribute should not be considered fatal as attribute remapping can be used to fix the issue.
+   */
+  const char *attribute_error_message;
+  void *_pad1;
 } MeshSeqCacheModifierData;
 
 /** #MeshSeqCacheModifierData.read_flag */

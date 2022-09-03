@@ -5,6 +5,8 @@
 #include "BLI_float4x4.hh"
 #include "BLI_math_vec_types.hh"
 
+#include "DNA_meshdata_types.h"
+
 BLI_CPP_TYPE_MAKE(bool, bool, CPPTypeFlags::BasicType)
 
 BLI_CPP_TYPE_MAKE(float, float, CPPTypeFlags::BasicType)
@@ -26,3 +28,6 @@ BLI_CPP_TYPE_MAKE(ColorGeometry4f, blender::ColorGeometry4f, CPPTypeFlags::Basic
 BLI_CPP_TYPE_MAKE(ColorGeometry4b, blender::ColorGeometry4b, CPPTypeFlags::BasicType)
 
 BLI_CPP_TYPE_MAKE(string, std::string, CPPTypeFlags::BasicType)
+
+BLI_CPP_TYPE_MAKE(MLoopUV, MLoopUV, CPPTypeFlags::None)
+BLI_CPP_TYPE_MAKE(MCol, MCol, CPPTypeFlags::None)

@@ -14,6 +14,7 @@
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 
+#include "BKE_attribute.h"
 #include "BKE_cachefile.h"
 #include "BKE_context.h"
 #include "BKE_lib_id.h"
@@ -311,4 +312,79 @@ void CACHEFILE_OT_layer_move(wmOperatorType *ot)
                0,
                "Direction",
                "Direction to move the active vertex group towards");
+}
+
+/* ***************************** Add Attribute Mapping Operator **************************** */
+
+static bool cachefile_attribute_mapping_poll(bContext *C)
+{
+  return CTX_data_edit_cachefile(C) != NULL;
+}
+
+static int cachefile_attribute_mapping_add_exec(bContext *C, wmOperator *UNUSED(op))
+{
+  CacheFile *cache_file = CTX_data_edit_cachefile(C);
+
+  if (!cache_file) {
+    return OPERATOR_CANCELLED;
+  }
+
+  BKE_cachefile_add_attribute_mapping(
+      cache_file, NULL, CACHEFILE_ATTRIBUTE_MAP_NONE, ATTR_DOMAIN_AUTO);
+
+  /* Since the mapping is not initialized, adding a mapping does not trigger a CacheFile update. */
+
+  return OPERATOR_FINISHED;
+}
+
+void CACHEFILE_OT_attribute_mapping_add(wmOperatorType *ot)
+{
+  ot->name = "Add Attribute Mapping";
+  ot->description = "Add an attribute mapping for this CacheFile";
+  ot->idname = __func__;
+
+  /* api callbacks */
+  ot->exec = cachefile_attribute_mapping_add_exec;
+  ot->poll = cachefile_attribute_mapping_poll;
+
+  /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+}
+
+/* ***************************** Remove Attribute Mapping Operator **************************** */
+
+static int cachefile_attribute_mapping_remove_exec(bContext *C, wmOperator *UNUSED(op))
+{
+  CacheFile *cache_file = CTX_data_edit_cachefile(C);
+
+  if (!cache_file) {
+    return OPERATOR_CANCELLED;
+  }
+
+  CacheAttributeMapping *mapping = BKE_cachefile_get_active_attribute_mapping(cache_file);
+
+  if (!mapping) {
+    return OPERATOR_CANCELLED;
+  }
+
+  BKE_cachefile_remove_attribute_mapping(cache_file, mapping);
+
+  Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
+  BKE_cachefile_reload(depsgraph, cache_file);
+
+  return OPERATOR_FINISHED;
+}
+
+void CACHEFILE_OT_attribute_mapping_remove(wmOperatorType *ot)
+{
+  ot->name = "Remove Attribute Mapping";
+  ot->description = "Remove an attribute mapping from this CacheFile";
+  ot->idname = __func__;
+
+  /* api callbacks */
+  ot->exec = cachefile_attribute_mapping_remove_exec;
+  ot->poll = cachefile_attribute_mapping_poll;
+
+  /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }

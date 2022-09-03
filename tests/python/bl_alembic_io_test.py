@@ -391,6 +391,150 @@ class OverrideLayersTest(AbstractAlembicTest):
         self.assertEqual(len(mesh.polygons), 6)
 
 
+class AttributeRemappingTest(AbstractAlembicTest):
+    def test_remap_wrongly_scoped_vertex_colors(self):
+        fname = 'wrong-vertex-color-scope.abc'
+        abc = self.testdir / fname
+
+        # We need a cache reader in order to add attribute remappings.
+        res = bpy.ops.wm.alembic_import(filepath=str(abc), as_background_job=False, always_add_cache_reader=True)
+        self.assertEqual({'FINISHED'}, res)
+
+        # Check that we do have not any vertex colors layers.
+        cube = bpy.context.active_object
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        cube_eval = cube.evaluated_get(depsgraph)
+        mesh = cube_eval.to_mesh()
+
+        self.assertEqual(len(mesh.vertex_colors), 0)
+
+        # Add a remapping for the vertex colors.
+        cache = bpy.data.cache_files[fname]
+
+        # Inside the file the vertex colors are stored with an invalid scope for the data type and
+        # size ("vertex" scope instead of "face varying").
+        # To load it, we therefore have to remap to vertex/byte colors, on the face corner domain, as
+        # this is what Blender expects.
+        cache.attribute_mappings.new(name="Col", mapping_type='MAP_TO_BYTE_COLOR', domain="FACE_CORNER")
+
+        # Check that we now have a vertex color layer called "Col".
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        cube_eval = cube.evaluated_get(depsgraph)
+        mesh = cube_eval.to_mesh()
+
+        self.assertEqual(len(mesh.vertex_colors), 1)
+        self.assertEqual(mesh.vertex_colors[0].name, "Col")
+
+        layer = mesh.vertex_colors["Col"]
+
+        # Test some known values.
+        self.assertAlmostEqualFloatArray(layer.data[0].color, (0.011765, 1.0, 0.098039, 1.0))
+        self.assertAlmostEqualFloatArray(layer.data[3].color, (0.0, 1.0, 0.098039, 1.0))
+        self.assertAlmostEqualFloatArray(layer.data[8].color, (1.0, 0.176471, 0.243137, 1.0))
+        self.assertAlmostEqualFloatArray(layer.data[20].color, (1.0, 0.0, 0.164706, 1.0))
+
+
+class AttributeFlattenedAttributesRemappingTest(AbstractAlembicTest):
+    def test_flattened_attribute_remapping(self):
+        fname = 'flattened-attributes.abc'
+        abc = self.testdir / fname
+
+        # We need a cache reader in order to add attribute remappings.
+        res = bpy.ops.wm.alembic_import(filepath=str(abc), as_background_job=False, always_add_cache_reader=True)
+        self.assertEqual({'FINISHED'}, res)
+
+        # Check that 1 dimensional scalar attributes are loaded correctly.
+        cube = bpy.context.active_object
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        cube_eval = cube.evaluated_get(depsgraph)
+        mesh = cube_eval.to_mesh()
+
+        self.assert_attribute_exists(mesh, 'RND_FLT_PNT', 'FLOAT', 'POINT')
+        self.assert_attribute_exists(mesh, 'RND_INT_PNT', 'INT', 'POINT')
+        self.assert_attribute_exists(mesh, 'RND_BOO_PNT', 'BOOLEAN', 'POINT')
+
+        self.assert_attribute_exists(mesh, 'RND_FLT_FAC', 'FLOAT', 'FACE')
+        self.assert_attribute_exists(mesh, 'RND_INT_FAC', 'INT', 'FACE')
+        self.assert_attribute_exists(mesh, 'RND_BOO_FAC', 'BOOLEAN', 'FACE')
+
+        # Check that multi-dimensional attributes are not loaded.
+        self.assert_attribute_missing(mesh, 'RND_CLR_PNT', 'FLOAT_COLOR', 'POINT')
+        self.assert_attribute_missing(mesh, 'RND_VEC_PNT', 'FLOAT_VECTOR', 'POINT')
+
+        self.assert_attribute_missing(mesh, 'RND_CLR_FAC', 'FLOAT_COLOR', 'FACE')
+        self.assert_attribute_missing(mesh, 'RND_VEC_FAC', 'FLOAT_VECTOR', 'FACE')
+
+        # Since the UV map data is also flattened, we will load it as a generic
+        # float2 attribute to also test that code path.
+        # We cannot test the loading to a UV layer as the mesh has a default
+        # UV layer also named "UVMap"...
+        self.assert_attribute_missing(mesh, 'UVMap', 'FLOAT2', 'CORNER')
+
+        # In this test file, the 'RND_CLR_FAC' attribute, which is a random RGBA color
+        # attribute on the face domain, is "wrongly" assigned to a float attribute on the
+        # corners. This is because the number of corners of the faces (8 faces of 4
+        # corners = 24 values) matches the number of floats (8 faces of RGBA values = 24).
+        # Check that indeed this is the case.
+        # Note that "wrongly" is quoted as for the point of view of the importer the type
+        # and values match a float attribute on the corners, which is not so wrong.
+        self.assert_attribute_exists(mesh, 'RND_CLR_FAC', 'FLOAT', 'CORNER')
+
+        # Add remappings for the multi-dimensional attributes.
+        cache = bpy.data.cache_files[fname]
+
+        cache.attribute_mappings.new(name="RND_CLR_PNT", mapping_type='MAP_TO_COLOR', domain="POINT")
+        vector_point_remap = cache.attribute_mappings.new(name="RND_VEC_PNT", mapping_type='MAP_TO_FLOAT3', domain="POINT")
+
+        cache.attribute_mappings.new(name="RND_CLR_FAC", mapping_type='MAP_TO_COLOR', domain="FACE")
+        vector_face_remap = cache.attribute_mappings.new(name="RND_VEC_FAC", mapping_type='MAP_TO_FLOAT3', domain="FACE")
+
+        cache.attribute_mappings.new(name="UVMap", mapping_type='MAP_TO_FLOAT2', domain="FACE_CORNER")
+
+        # Check that multi-dimensional scalar attributes are now available.
+        cube = bpy.context.active_object
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        cube_eval = cube.evaluated_get(depsgraph)
+        mesh = cube_eval.to_mesh()
+
+        self.assert_attribute_exists(mesh, 'RND_CLR_PNT', 'FLOAT_COLOR', 'POINT')
+        self.assert_attribute_exists(mesh, 'RND_VEC_PNT', 'FLOAT_VECTOR', 'POINT')
+
+        self.assert_attribute_exists(mesh, 'RND_CLR_FAC', 'FLOAT_COLOR', 'FACE')
+        self.assert_attribute_exists(mesh, 'RND_VEC_FAC', 'FLOAT_VECTOR', 'FACE')
+
+        self.assert_attribute_exists(mesh, 'UVMap', 'FLOAT2', 'CORNER')
+
+        # Remap vectors to colors to test the RGB (without alpha) code path.
+        vector_point_remap.mapping = 'MAP_TO_COLOR'
+        vector_face_remap.mapping = 'MAP_TO_COLOR'
+
+        cube = bpy.context.active_object
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        cube_eval = cube.evaluated_get(depsgraph)
+        mesh = cube_eval.to_mesh()
+
+        self.assert_attribute_exists(mesh, 'RND_VEC_PNT', 'FLOAT_COLOR', 'POINT')
+        self.assert_attribute_exists(mesh, 'RND_VEC_FAC', 'FLOAT_COLOR', 'FACE')
+
+    def assert_attribute_exists(self, mesh, name, type, domain):
+        self.assertIsNotNone(self.get_attribute(mesh, name, type, domain))
+
+    def assert_attribute_missing(self, mesh, name, type, domain):
+        self.assertIsNone(self.get_attribute(mesh, name, type, domain))
+
+    def get_attribute(self, mesh, name, type, domain):
+        for attribute in mesh.attributes:
+            if attribute.name != name:
+                continue
+            if attribute.data_type != type:
+                continue
+            if attribute.domain != domain:
+                continue
+            return attribute
+
+        return None
+
+
 def main():
     global args
     import argparse

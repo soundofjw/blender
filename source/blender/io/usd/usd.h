@@ -12,6 +12,8 @@ extern "C" {
 struct CacheArchiveHandle;
 struct CacheFile;
 struct CacheReader;
+struct GeometrySet;
+struct Mesh;
 struct Object;
 struct bContext;
 
@@ -90,17 +92,18 @@ void USD_free_handle(struct CacheArchiveHandle *handle);
 
 void USD_get_transform(struct CacheReader *reader, float r_mat[4][4], float time, float scale);
 
-/* Either modifies current_mesh in-place or constructs a new mesh. */
-struct Mesh *USD_read_mesh(struct CacheReader *reader,
-                           struct Object *ob,
-                           struct Mesh *existing_mesh,
-                           double time,
-                           const char **err_str,
-                           int read_flag);
+#ifdef __cplusplus
+void USD_read_geometry(CacheReader *reader,
+                       Object *ob,
+                       GeometrySet &geometry_set,
+                       const double time,
+                       const char **err_str,
+                       const int read_flag);
+#endif
 
 bool USD_mesh_topology_changed(struct CacheReader *reader,
                                struct Object *ob,
-                               struct Mesh *existing_mesh,
+                               const struct Mesh *existing_mesh,
                                double time,
                                const char **err_str);
 

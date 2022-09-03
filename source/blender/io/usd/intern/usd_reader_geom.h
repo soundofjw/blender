@@ -5,6 +5,7 @@
 #include "usd.h"
 #include "usd_reader_xform.h"
 
+struct GeometrySet;
 struct Mesh;
 
 namespace blender::io::usd {
@@ -19,10 +20,10 @@ class USDGeomReader : public USDXformReader {
   {
   }
 
-  virtual Mesh *read_mesh(struct Mesh *existing_mesh,
-                          double motionSampleTime,
-                          int read_flag,
-                          const char **err_str) = 0;
+  virtual void read_geometry(GeometrySet &geometry_set,
+                             double motionSampleTime,
+                             int read_flag,
+                             const char **err_str) = 0;
 
   virtual bool topology_changed(const Mesh * /* existing_mesh */, double /* motionSampleTime */)
   {

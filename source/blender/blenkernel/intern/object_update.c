@@ -276,6 +276,15 @@ void BKE_object_sync_to_original(Depsgraph *depsgraph, Object *object)
     if (md->error != NULL) {
       md_orig->error = BLI_strdup(md->error);
     }
+
+    if (md->type == eModifierType_MeshSequenceCache) {
+      MeshSeqCacheModifierData *mcmd_orig = (MeshSeqCacheModifierData *)md_orig;
+      MeshSeqCacheModifierData *mcmd = (MeshSeqCacheModifierData *)md;
+      MEM_SAFE_FREE(mcmd_orig->attribute_error_message);
+      if (mcmd->attribute_error_message) {
+        mcmd_orig->attribute_error_message = BLI_strdup(mcmd->attribute_error_message);
+      }
+    }
   }
 
   object_sync_boundbox_to_original(object_orig, object);

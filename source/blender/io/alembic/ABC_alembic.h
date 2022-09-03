@@ -14,6 +14,7 @@ extern "C" {
 struct CacheArchiveHandle;
 struct CacheFileLayer;
 struct CacheReader;
+struct GeometrySet;
 struct ListBase;
 struct Main;
 struct Mesh;
@@ -104,14 +105,21 @@ typedef struct ABCReadParams {
   int read_flags;
   const char *velocity_name;
   float velocity_scale;
+
+  const char **attribute_reading_error;
+
+  /* This is a list of #CacheAttributeMapping. */
+  ListBase *mappings;
 } ABCReadParams;
 
-/* Either modifies existing_mesh in-place or constructs a new mesh. */
-struct Mesh *ABC_read_mesh(struct CacheReader *reader,
-                           struct Object *ob,
-                           struct Mesh *existing_mesh,
-                           const ABCReadParams *params,
-                           const char **err_str);
+#ifdef __cplusplus
+/* Either modifies the existing geometry component, or create a new one. */
+void ABC_read_geometry(CacheReader *reader,
+                       Object *ob,
+                       GeometrySet &geometry_set,
+                       const ABCReadParams *params,
+                       const char **err_str);
+#endif
 
 bool ABC_mesh_topology_changed(struct CacheReader *reader,
                                struct Object *ob,

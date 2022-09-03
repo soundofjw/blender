@@ -132,14 +132,13 @@ Imath::M44d get_matrix(const IXformSchema &schema, const chrono_t time)
   return s0.getMatrix();
 }
 
-struct Mesh *AbcObjectReader::read_mesh(struct Mesh *existing_mesh,
-                                        const Alembic::Abc::ISampleSelector &UNUSED(sample_sel),
-                                        int UNUSED(read_flag),
-                                        const char *UNUSED(velocity_name),
-                                        const float UNUSED(velocity_scale),
-                                        const char **UNUSED(err_str))
+void AbcObjectReader::read_geometry(GeometrySet &UNUSED(geometry_set),
+                                    const Alembic::Abc::ISampleSelector &UNUSED(sample_sel),
+                                    const AttributeReadingHelper &UNUSED(attribute_helper),
+                                    int UNUSED(read_flag),
+                                    const float UNUSED(velocity_scale),
+                                    const char **UNUSED(err_str))
 {
-  return existing_mesh;
 }
 
 bool AbcObjectReader::topology_changed(const Mesh * /*existing_mesh*/,

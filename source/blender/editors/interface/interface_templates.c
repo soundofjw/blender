@@ -39,6 +39,7 @@
 #include "BLT_translation.h"
 
 #include "BKE_action.h"
+#include "BKE_cachefile.h"
 #include "BKE_colorband.h"
 #include "BKE_colortools.h"
 #include "BKE_constraint.h"
@@ -6715,6 +6716,75 @@ bool uiTemplateCacheFilePointer(PointerRNA *ptr, const char *propname, PointerRN
 
   *r_file_ptr = RNA_property_pointer_get(ptr, prop);
   return true;
+}
+
+static void cache_file_attribute_mapping_item(uiList *UNUSED(ui_list),
+                                              bContext *UNUSED(C),
+                                              uiLayout *layout,
+                                              PointerRNA *UNUSED(dataptr),
+                                              PointerRNA *itemptr,
+                                              int UNUSED(icon),
+                                              PointerRNA *UNUSED(active_dataptr),
+                                              const char *UNUSED(active_propname),
+                                              int UNUSED(index),
+                                              int UNUSED(flt_flag))
+{
+  uiLayout *row = uiLayoutRow(layout, true);
+  uiItemR(row, itemptr, "name", UI_ITEM_R_NO_BG, "", ICON_NONE);
+}
+
+uiListType *UI_UL_cache_file_attribute_mappings()
+{
+  uiListType *list_type = (uiListType *)MEM_callocN(sizeof(*list_type), __func__);
+
+  BLI_strncpy(list_type->idname, "UI_UL_cache_file_attribute_mappings", sizeof(list_type->idname));
+  list_type->draw_item = cache_file_attribute_mapping_item;
+
+  return list_type;
+}
+
+void uiTemplateCacheFileAttributeRemapping(uiLayout *layout,
+                                           const bContext *C,
+                                           PointerRNA *fileptr)
+{
+  /* Ensure that the context has a CacheFile as this may not be set inside of modifiers panels. */
+  uiLayoutSetContextPointer(layout, "edit_cachefile", fileptr);
+
+  uiLayout *row = uiLayoutRow(layout, false);
+  uiLayout *col = uiLayoutColumn(row, true);
+
+  uiTemplateList(col,
+                 (bContext *)C,
+                 "UI_UL_cache_file_attribute_mappings",
+                 "cache_file_attribute_mappings",
+                 fileptr,
+                 "attribute_mappings",
+                 fileptr,
+                 "active_attribute_mapping_index",
+                 "",
+                 1,
+                 5,
+                 UILST_LAYOUT_DEFAULT,
+                 1,
+                 UI_TEMPLATE_LIST_FLAG_NONE);
+
+  col = uiLayoutColumn(row, true);
+  uiItemO(col, "", ICON_ADD, "cachefile.attribute_mapping_add");
+  uiItemO(col, "", ICON_REMOVE, "cachefile.attribute_mapping_remove");
+
+  CacheFile *file = fileptr->data;
+  CacheAttributeMapping *mapping = BKE_cachefile_get_active_attribute_mapping(file);
+  if (mapping) {
+    PointerRNA mapping_ptr;
+    RNA_pointer_create(&file->id, &RNA_CacheAttributeMapping, mapping, &mapping_ptr);
+
+    row = uiLayoutRow(layout, false);
+    col = uiLayoutColumn(row, true);
+
+    uiItemR(col, &mapping_ptr, "name", 0, "Name", ICON_NONE);
+    uiItemR(col, &mapping_ptr, "mapping", 0, "Target Data Type", ICON_NONE);
+    uiItemR(col, &mapping_ptr, "domain", 0, "Target Domain", ICON_NONE);
+  }
 }
 
 void uiTemplateCacheFile(uiLayout *layout,

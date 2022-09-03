@@ -48,10 +48,10 @@ class USDMeshReader : public USDGeomReader {
   void create_object(Main *bmain, double motionSampleTime) override;
   void read_object_data(Main *bmain, double motionSampleTime) override;
 
-  struct Mesh *read_mesh(struct Mesh *existing_mesh,
-                         double motionSampleTime,
-                         int read_flag,
-                         const char **err_str) override;
+  void read_geometry(GeometrySet &geometry_set,
+                     double motionSampleTime,
+                     int read_flag,
+                     const char **err_str) override;
 
   bool topology_changed(const Mesh *existing_mesh, double motionSampleTime) override;
 
@@ -75,6 +75,11 @@ class USDMeshReader : public USDGeomReader {
                         Mesh *mesh,
                         double motionSampleTime,
                         bool new_mesh);
+
+  struct Mesh *read_mesh(struct Mesh *existing_mesh,
+                         double motionSampleTime,
+                         int read_flag,
+                         const char **err_str);
 };
 
 }  // namespace blender::io::usd

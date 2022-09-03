@@ -11,6 +11,7 @@
 extern "C" {
 #endif
 
+struct CacheAttributeMapping;
 struct CacheFile;
 struct CacheFileLayer;
 struct CacheReader;
@@ -61,6 +62,17 @@ struct CacheFileLayer *BKE_cachefile_add_layer(struct CacheFile *cache_file,
 struct CacheFileLayer *BKE_cachefile_get_active_layer(struct CacheFile *cache_file);
 
 void BKE_cachefile_remove_layer(struct CacheFile *cache_file, struct CacheFileLayer *layer);
+
+struct CacheAttributeMapping *BKE_cachefile_add_attribute_mapping(struct CacheFile *cache_file,
+                                                                  const char *name,
+                                                                  int mapping_type,
+                                                                  int domain);
+
+struct CacheAttributeMapping *BKE_cachefile_get_active_attribute_mapping(
+    struct CacheFile *cache_file);
+
+void BKE_cachefile_remove_attribute_mapping(struct CacheFile *cache_file,
+                                            struct CacheAttributeMapping *mapping);
 
 #ifdef __cplusplus
 }

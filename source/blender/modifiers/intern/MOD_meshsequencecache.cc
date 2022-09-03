@@ -25,6 +25,7 @@
 
 #include "BKE_cachefile.h"
 #include "BKE_context.h"
+#include "BKE_geometry_set.hh"
 #include "BKE_lib_query.h"
 #include "BKE_mesh.h"
 #include "BKE_object.h"
@@ -75,15 +76,16 @@ static void initData(ModifierData *md)
 
 static void copyData(const ModifierData *md, ModifierData *target, const int flag)
 {
-#if 0
   const MeshSeqCacheModifierData *mcmd = (const MeshSeqCacheModifierData *)md;
-#endif
   MeshSeqCacheModifierData *tmcmd = (MeshSeqCacheModifierData *)target;
 
   BKE_modifier_copydata_generic(md, target, flag);
 
   tmcmd->reader = nullptr;
   tmcmd->reader_object_path[0] = '\0';
+  if (mcmd->attribute_error_message) {
+    tmcmd->attribute_error_message = BLI_strdup(mcmd->attribute_error_message);
+  }
 }
 
 static void freeData(ModifierData *md)
@@ -94,6 +96,8 @@ static void freeData(ModifierData *md)
     mcmd->reader_object_path[0] = '\0';
     BKE_cachefile_reader_free(mcmd->cache_file, &mcmd->reader);
   }
+
+  MEM_SAFE_FREE(mcmd->attribute_error_message);
 }
 
 static bool isDisabled(const struct Scene *UNUSED(scene),
@@ -104,6 +108,40 @@ static bool isDisabled(const struct Scene *UNUSED(scene),
 
   /* leave it up to the modifier to check the file is valid on calculation */
   return (mcmd->cache_file == nullptr) || (mcmd->object_path[0] == '\0');
+}
+
+/* If this invocation is for the ORCO mesh, and the mesh hasn't changed topology, we
+ * must return the mesh as-is instead of deforming it. */
+static bool need_orco_mesh(MeshSeqCacheModifierData *mcmd,
+                           const ModifierEvalContext *ctx,
+                           const Mesh *mesh,
+                           float time,
+                           const char **err_str)
+{
+  CacheFile *cache_file = mcmd->cache_file;
+
+  if (ctx->flag & MOD_APPLY_ORCO) {
+    switch (cache_file->type) {
+      case CACHEFILE_TYPE_ALEMBIC:
+#ifdef WITH_ALEMBIC
+        if (!ABC_mesh_topology_changed(mcmd->reader, ctx->object, mesh, time, err_str)) {
+          return true;
+        }
+#endif
+        break;
+      case CACHEFILE_TYPE_USD:
+#ifdef WITH_USD
+        if (!USD_mesh_topology_changed(mcmd->reader, ctx->object, mesh, time, err_str)) {
+          return true;
+        }
+#endif
+        break;
+      case CACHE_FILE_TYPE_INVALID:
+        break;
+    }
+  }
+
+  return false;
 }
 
 static Mesh *generate_bounding_box_mesh(const Mesh *org_mesh)
@@ -121,10 +159,97 @@ static Mesh *generate_bounding_box_mesh(const Mesh *org_mesh)
   return result;
 }
 
+static void modifyGeometry(ModifierData *md,
+                           const ModifierEvalContext *ctx,
+                           GeometrySet &geometry_set)
+{
+#ifdef WITH_ALEMBIC
+  MeshSeqCacheModifierData *mcmd = reinterpret_cast<MeshSeqCacheModifierData *>(md);
+
+  Scene *scene = DEG_get_evaluated_scene(ctx->depsgraph);
+  CacheFile *cache_file = mcmd->cache_file;
+  const float frame = DEG_get_ctime(ctx->depsgraph);
+  const float time = BKE_cachefile_time_offset(cache_file, frame, FPS);
+  const char *err_str = nullptr;
+
+  if (!mcmd->reader || !STREQ(mcmd->reader_object_path, mcmd->object_path)) {
+    STRNCPY(mcmd->reader_object_path, mcmd->object_path);
+    BKE_cachefile_reader_open(cache_file, &mcmd->reader, ctx->object, mcmd->object_path);
+    if (!mcmd->reader) {
+      BKE_modifier_set_error(
+          ctx->object, md, "Could not create Alembic reader for file %s", cache_file->filepath);
+      return;
+    }
+  }
+
+  if (geometry_set.has_mesh()) {
+    const Mesh *mesh = geometry_set.get_mesh_for_read();
+    if (need_orco_mesh(mcmd, ctx, mesh, time, &err_str)) {
+      return;
+    }
+  }
+
+  /* Do not process data if using a render procedural, return a box instead for displaying in the
+   * viewport. */
+  if (BKE_cache_file_uses_render_procedural(cache_file, scene)) {
+    const Mesh *org_mesh = nullptr;
+    if (geometry_set.has_mesh()) {
+      org_mesh = geometry_set.get_mesh_for_read();
+    }
+
+    Mesh *bbox = generate_bounding_box_mesh(org_mesh);
+    geometry_set = GeometrySet::create_with_mesh(bbox, GeometryOwnershipType::Editable);
+    return;
+  }
+
+  /* Time (in frames or seconds) between two velocity samples. Automatically computed to
+   * scale the velocity vectors at render time for generating proper motion blur data. */
+  float velocity_scale = mcmd->velocity_scale;
+  if (mcmd->cache_file->velocity_unit == CACHEFILE_VELOCITY_UNIT_FRAME) {
+    velocity_scale *= FPS;
+  }
+
+  switch (cache_file->type) {
+    default: {
+      break;
+    }
+#  ifdef WITH_ALEMBIC
+    case CACHEFILE_TYPE_ALEMBIC: {
+      ABCReadParams params;
+      params.time = time;
+      params.read_flags = mcmd->read_flag;
+      params.velocity_name = mcmd->cache_file->velocity_name;
+      params.velocity_scale = velocity_scale;
+      params.mappings = &mcmd->cache_file->attribute_mappings;
+      params.attribute_reading_error = &mcmd->attribute_error_message;
+      ABC_read_geometry(mcmd->reader, ctx->object, geometry_set, &params, &err_str);
+      break;
+    }
+#  endif
+#  ifdef WITH_USD
+    case CACHEFILE_TYPE_USD: {
+      USD_read_geometry(mcmd->reader, ctx->object, geometry_set, time, &err_str, mcmd->read_flag);
+    }
+#  endif
+  }
+
+  if (err_str) {
+    BKE_modifier_set_error(ctx->object, md, "%s", err_str);
+  }
+
+#else
+  UNUSED_VARS(ctx, md, geometry_set);
+  return;
+#endif
+}
+
 static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *mesh)
 {
 #if defined(WITH_USD) || defined(WITH_ALEMBIC)
   MeshSeqCacheModifierData *mcmd = reinterpret_cast<MeshSeqCacheModifierData *>(md);
+
+  /* Reset any attribute error here, in case we early exit from before being able to load them. */
+  MEM_SAFE_FREE(mcmd->attribute_error_message);
 
   /* Only used to check whether we are operating on org data or not... */
   Mesh *me = (ctx->object->type == OB_MESH) ? static_cast<Mesh *>(ctx->object->data) : nullptr;
@@ -152,27 +277,8 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
     return generate_bounding_box_mesh(org_mesh);
   }
 
-  /* If this invocation is for the ORCO mesh, and the mesh hasn't changed topology, we
-   * must return the mesh as-is instead of deforming it. */
-  if (ctx->flag & MOD_APPLY_ORCO) {
-    switch (cache_file->type) {
-      case CACHEFILE_TYPE_ALEMBIC:
-#  ifdef WITH_ALEMBIC
-        if (!ABC_mesh_topology_changed(mcmd->reader, ctx->object, mesh, time, &err_str)) {
-          return mesh;
-        }
-#  endif
-        break;
-      case CACHEFILE_TYPE_USD:
-#  ifdef WITH_USD
-        if (!USD_mesh_topology_changed(mcmd->reader, ctx->object, mesh, time, &err_str)) {
-          return mesh;
-        }
-#  endif
-        break;
-      case CACHE_FILE_TYPE_INVALID:
-        break;
-    }
+  if (need_orco_mesh(mcmd, ctx, mesh, time, &err_str)) {
+    return mesh;
   }
 
   if (me != nullptr) {
@@ -193,41 +299,9 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
     }
   }
 
-  Mesh *result = nullptr;
-
-  switch (cache_file->type) {
-    case CACHEFILE_TYPE_ALEMBIC: {
-#  ifdef WITH_ALEMBIC
-      /* Time (in frames or seconds) between two velocity samples. Automatically computed to
-       * scale the velocity vectors at render time for generating proper motion blur data. */
-      float velocity_scale = mcmd->velocity_scale;
-      if (mcmd->cache_file->velocity_unit == CACHEFILE_VELOCITY_UNIT_FRAME) {
-        velocity_scale *= FPS;
-      }
-
-      ABCReadParams params = {};
-      params.time = time;
-      params.read_flags = mcmd->read_flag;
-      params.velocity_name = mcmd->cache_file->velocity_name;
-      params.velocity_scale = velocity_scale;
-
-      result = ABC_read_mesh(mcmd->reader, ctx->object, mesh, &params, &err_str);
-#  endif
-      break;
-    }
-    case CACHEFILE_TYPE_USD:
-#  ifdef WITH_USD
-      result = USD_read_mesh(
-          mcmd->reader, ctx->object, mesh, time * FPS, &err_str, mcmd->read_flag);
-#  endif
-      break;
-    case CACHE_FILE_TYPE_INVALID:
-      break;
-  }
-
-  if (err_str) {
-    BKE_modifier_set_error(ctx->object, md, "%s", err_str);
-  }
+  GeometrySet geometry_set = GeometrySet::create_with_mesh(mesh, GeometryOwnershipType::Editable);
+  modifyGeometry(md, ctx, geometry_set);
+  Mesh *result = geometry_set.get_component_for_write<MeshComponent>().release();
 
   if (!ELEM(result, nullptr, mesh) && (mesh != org_mesh)) {
     BKE_id_free(nullptr, mesh);
@@ -239,6 +313,13 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
   UNUSED_VARS(ctx, md, generate_bounding_box_mesh);
   return mesh;
 #endif
+}
+
+static void modifyGeometrySet(ModifierData *md,
+                              const ModifierEvalContext *ctx,
+                              GeometrySet *geometry_set)
+{
+  modifyGeometry(md, ctx, *geometry_set);
 }
 
 static bool dependsOnTime(Scene *scene, ModifierData *md)
@@ -282,6 +363,11 @@ static void panel_draw(const bContext *C, Panel *panel)
   bool has_cache_file = !RNA_pointer_is_null(&cache_file_ptr);
 
   uiLayoutSetPropSep(layout, true);
+
+  MeshSeqCacheModifierData *mcmd = (MeshSeqCacheModifierData *)ptr->data;
+  if (mcmd->attribute_error_message) {
+    uiItemL(layout, mcmd->attribute_error_message, ICON_INFO);
+  }
 
   uiTemplateCacheFile(layout, C, ptr, "cache_file");
 
@@ -363,6 +449,22 @@ static void override_layers_panel_draw(const bContext *C, Panel *panel)
   uiTemplateCacheFileLayers(layout, C, &fileptr);
 }
 
+static void attribute_remapping_panel_draw(const bContext *C, Panel *panel)
+{
+  uiLayout *layout = panel->layout;
+
+  PointerRNA ob_ptr;
+  PointerRNA *ptr = modifier_panel_get_property_pointers(panel, &ob_ptr);
+
+  PointerRNA fileptr;
+  if (!uiTemplateCacheFilePointer(ptr, "cache_file", &fileptr)) {
+    return;
+  }
+
+  uiLayoutSetPropSep(layout, true);
+  uiTemplateCacheFileAttributeRemapping(layout, C, &fileptr);
+}
+
 static void panelRegister(ARegionType *region_type)
 {
   PanelType *panel_type = modifier_panel_register(
@@ -382,6 +484,12 @@ static void panelRegister(ARegionType *region_type)
                              nullptr,
                              override_layers_panel_draw,
                              panel_type);
+  modifier_subpanel_register(region_type,
+                             "attribute_remapping",
+                             "Attribute Remapping",
+                             nullptr,
+                             attribute_remapping_panel_draw,
+                             panel_type);
 }
 
 static void blendRead(BlendDataReader *UNUSED(reader), ModifierData *md)
@@ -389,6 +497,7 @@ static void blendRead(BlendDataReader *UNUSED(reader), ModifierData *md)
   MeshSeqCacheModifierData *msmcd = reinterpret_cast<MeshSeqCacheModifierData *>(md);
   msmcd->reader = nullptr;
   msmcd->reader_object_path[0] = '\0';
+  msmcd->attribute_error_message = nullptr;
 }
 
 ModifierTypeInfo modifierType_MeshSequenceCache = {
@@ -408,7 +517,7 @@ ModifierTypeInfo modifierType_MeshSequenceCache = {
     /* deformVertsEM */ nullptr,
     /* deformMatricesEM */ nullptr,
     /* modifyMesh */ modifyMesh,
-    /* modifyGeometrySet */ nullptr,
+    /* modifyGeometrySet */ modifyGeometrySet,
 
     /* initData */ initData,
     /* requiredDataMask */ nullptr,

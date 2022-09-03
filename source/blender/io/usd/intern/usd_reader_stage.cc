@@ -28,6 +28,8 @@
 
 #include <iostream>
 
+#include "DNA_userdef_types.h"
+
 namespace blender::io::usd {
 
 USDStageReader::USDStageReader(pxr::UsdStageRefPtr stage,
@@ -52,7 +54,8 @@ USDPrimReader *USDStageReader::create_reader_if_allowed(const pxr::UsdPrim &prim
   if (params_.import_cameras && prim.IsA<pxr::UsdGeomCamera>()) {
     return new USDCameraReader(prim, params_, settings_);
   }
-  if (params_.import_curves && prim.IsA<pxr::UsdGeomBasisCurves>()) {
+  if (params_.import_curves && prim.IsA<pxr::UsdGeomBasisCurves>() &&
+      U.experimental.use_new_curves_type) {
     return new USDCurvesReader(prim, params_, settings_);
   }
   if (params_.import_curves && prim.IsA<pxr::UsdGeomNurbsCurves>()) {
@@ -84,7 +87,7 @@ USDPrimReader *USDStageReader::create_reader(const pxr::UsdPrim &prim)
   if (prim.IsA<pxr::UsdGeomCamera>()) {
     return new USDCameraReader(prim, params_, settings_);
   }
-  if (prim.IsA<pxr::UsdGeomBasisCurves>()) {
+  if (prim.IsA<pxr::UsdGeomBasisCurves>() && U.experimental.use_new_curves_type) {
     return new USDCurvesReader(prim, params_, settings_);
   }
   if (prim.IsA<pxr::UsdGeomNurbsCurves>()) {

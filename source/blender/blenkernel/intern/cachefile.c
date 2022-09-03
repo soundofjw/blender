@@ -73,6 +73,7 @@ static void cache_file_copy_data(Main *UNUSED(bmain),
   cache_file_dst->handle_readers = NULL;
   BLI_duplicatelist(&cache_file_dst->object_paths, &cache_file_src->object_paths);
   BLI_duplicatelist(&cache_file_dst->layers, &cache_file_src->layers);
+  BLI_duplicatelist(&cache_file_dst->attribute_mappings, &cache_file_src->attribute_mappings);
 }
 
 static void cache_file_free_data(ID *id)
@@ -81,6 +82,7 @@ static void cache_file_free_data(ID *id)
   cachefile_handle_free(cache_file);
   BLI_freelistN(&cache_file->object_paths);
   BLI_freelistN(&cache_file->layers);
+  BLI_freelistN(&cache_file->attribute_mappings);
 }
 
 static void cache_file_foreach_path(ID *id, BPathForeachPathData *bpath_data)
@@ -110,6 +112,11 @@ static void cache_file_blend_write(BlendWriter *writer, ID *id, const void *id_a
   LISTBASE_FOREACH (CacheFileLayer *, layer, &cache_file->layers) {
     BLO_write_struct(writer, CacheFileLayer, layer);
   }
+
+  /* Write attribute mappings. */
+  LISTBASE_FOREACH (CacheAttributeMapping *, mapping, &cache_file->attribute_mappings) {
+    BLO_write_struct(writer, CacheAttributeMapping, mapping);
+  }
 }
 
 static void cache_file_blend_read_data(BlendDataReader *reader, ID *id)
@@ -126,6 +133,9 @@ static void cache_file_blend_read_data(BlendDataReader *reader, ID *id)
 
   /* relink layers */
   BLO_read_list(reader, &cache_file->layers);
+
+  /* Relink attribute mappings. */
+  BLO_read_list(reader, &cache_file->attribute_mappings);
 }
 
 IDTypeInfo IDType_ID_CF = {
@@ -459,4 +469,39 @@ void BKE_cachefile_remove_layer(CacheFile *cache_file, CacheFileLayer *layer)
   cache_file->active_layer = 0;
   BLI_remlink(&cache_file->layers, layer);
   MEM_freeN(layer);
+}
+
+CacheAttributeMapping *BKE_cachefile_add_attribute_mapping(CacheFile *cache_file,
+                                                           const char *name,
+                                                           const int mapping_type,
+                                                           const int domain)
+{
+  const int current_mapping_count = BLI_listbase_count(&cache_file->attribute_mappings);
+
+  CacheAttributeMapping *mapping = MEM_callocN(sizeof(CacheAttributeMapping),
+                                               "CacheAttributeMapping");
+
+  if (name) {
+    BLI_strncpy(mapping->name, name, sizeof(mapping->name));
+  }
+  mapping->mapping = (char)mapping_type;
+  mapping->domain = (char)domain;
+
+  BLI_addtail(&cache_file->attribute_mappings, mapping);
+
+  cache_file->active_attribute_mapping = current_mapping_count + 1;
+  return mapping;
+}
+
+CacheAttributeMapping *BKE_cachefile_get_active_attribute_mapping(CacheFile *cache_file)
+{
+  /* BLI_findlink handles the out of bounds checks. */
+  return BLI_findlink(&cache_file->attribute_mappings, cache_file->active_attribute_mapping - 1);
+}
+
+void BKE_cachefile_remove_attribute_mapping(CacheFile *cache_file, CacheAttributeMapping *mapping)
+{
+  cache_file->active_attribute_mapping = 0;
+  BLI_remlink(&cache_file->attribute_mappings, mapping);
+  MEM_freeN(mapping);
 }

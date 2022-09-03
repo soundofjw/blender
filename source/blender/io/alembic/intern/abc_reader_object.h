@@ -11,6 +11,7 @@
 #include "DNA_ID.h"
 
 struct CacheFile;
+struct GeometrySet;
 struct Main;
 struct Mesh;
 struct Object;
@@ -18,6 +19,8 @@ struct Object;
 using Alembic::AbcCoreAbstract::chrono_t;
 
 namespace blender::io::alembic {
+
+class AttributeReadingHelper;
 
 struct ImportSettings {
   bool do_convert_mat;
@@ -37,7 +40,6 @@ struct ImportSettings {
   int read_flag;
 
   /* From CacheFile and MeshSeqCacheModifierData */
-  std::string velocity_name;
   float velocity_scale;
 
   bool validate_meshes;
@@ -55,7 +57,6 @@ struct ImportSettings {
         sequence_len(1),
         sequence_offset(0),
         read_flag(0),
-        velocity_name(""),
         velocity_scale(1.0f),
         validate_meshes(false),
         always_add_cache_reader(false),
@@ -66,7 +67,8 @@ struct ImportSettings {
 
 template<typename Schema> static bool has_animations(Schema &schema, ImportSettings *settings)
 {
-  return settings->is_sequence || !schema.isConstant();
+  return settings->is_sequence || !schema.isConstant() ||
+         has_animated_attributes(schema.getArbGeomParams());
 }
 
 class AbcObjectReader {
@@ -133,12 +135,13 @@ class AbcObjectReader {
 
   virtual void readObjectData(Main *bmain, const Alembic::Abc::ISampleSelector &sample_sel) = 0;
 
-  virtual struct Mesh *read_mesh(struct Mesh *mesh,
-                                 const Alembic::Abc::ISampleSelector &sample_sel,
-                                 int read_flag,
-                                 const char *velocity_name,
-                                 float velocity_scale,
-                                 const char **err_str);
+  virtual void read_geometry(GeometrySet &geometry_set,
+                             const Alembic::Abc::ISampleSelector &sample_sel,
+                             const AttributeReadingHelper &attribute_helper,
+                             int read_flag,
+                             const float velocity_scale,
+                             const char **err_str);
+
   virtual bool topology_changed(const Mesh *existing_mesh,
                                 const Alembic::Abc::ISampleSelector &sample_sel);
 

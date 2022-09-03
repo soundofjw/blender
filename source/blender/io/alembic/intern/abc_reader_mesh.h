@@ -24,14 +24,15 @@ class AbcMeshReader final : public AbcObjectReader {
                            const char **err_str) const override;
   void readObjectData(Main *bmain, const Alembic::Abc::ISampleSelector &sample_sel) override;
 
-  struct Mesh *read_mesh(struct Mesh *existing_mesh,
-                         const Alembic::Abc::ISampleSelector &sample_sel,
-                         int read_flag,
-                         const char *velocity_name,
-                         float velocity_scale,
-                         const char **err_str) override;
   bool topology_changed(const Mesh *existing_mesh,
                         const Alembic::Abc::ISampleSelector &sample_sel) override;
+
+  void read_geometry(GeometrySet &geometry_set,
+                     const Alembic::Abc::ISampleSelector &sample_sel,
+                     const AttributeReadingHelper &attribute_helper,
+                     int read_flag,
+                     const float velocity_scale,
+                     const char **err_str) override;
 
  private:
   void readFaceSetsSample(Main *bmain,
@@ -42,6 +43,13 @@ class AbcMeshReader final : public AbcObjectReader {
                                 MPoly *mpoly,
                                 int totpoly,
                                 std::map<std::string, int> &r_mat_map);
+
+  struct Mesh *read_mesh(struct Mesh *existing_mesh,
+                         const Alembic::Abc::ISampleSelector &sample_sel,
+                         const AttributeReadingHelper &attribute_helper,
+                         const int read_flag,
+                         const float velocity_scale,
+                         const char **err_str);
 };
 
 class AbcSubDReader final : public AbcObjectReader {
@@ -55,18 +63,30 @@ class AbcSubDReader final : public AbcObjectReader {
                            const Object *const ob,
                            const char **err_str) const override;
   void readObjectData(Main *bmain, const Alembic::Abc::ISampleSelector &sample_sel) override;
+
+  void read_geometry(GeometrySet &geometry_set,
+                     const Alembic::Abc::ISampleSelector &sample_sel,
+                     const AttributeReadingHelper &attribute_helper,
+                     int read_flag,
+                     const float velocity_scale,
+                     const char **err_str) override;
+
+ private:
   struct Mesh *read_mesh(struct Mesh *existing_mesh,
                          const Alembic::Abc::ISampleSelector &sample_sel,
-                         int read_flag,
-                         const char *velocity_name,
-                         float velocity_scale,
-                         const char **err_str) override;
+                         const AttributeReadingHelper &attribute_helper,
+                         const int read_flag,
+                         const float velocity_scale,
+                         const char **err_str);
 };
 
 void read_mverts(Mesh &mesh,
                  const Alembic::AbcGeom::P3fArraySamplePtr positions,
                  const Alembic::AbcGeom::N3fArraySamplePtr normals);
 
-CDStreamConfig get_config(struct Mesh *mesh, bool use_vertex_interpolation);
+CDStreamConfig get_config(struct Mesh *mesh,
+                          const AttributeReadingHelper &attribute_helper,
+                          const std::string &iobject_full_name,
+                          bool use_vertex_interpolation);
 
 }  // namespace blender::io::alembic
