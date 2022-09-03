@@ -8,6 +8,7 @@
 
 #include "BLI_utildefines.h"
 
+#include "BKE_attribute.hh"
 #include "BKE_global.h"
 #include "BKE_object.h"
 
@@ -74,6 +75,11 @@ NodeGroup *BlenderFileLoader::Load()
     }
 
     if (!(BKE_object_visibility(ob, eval_mode) & OB_VISIBLE_SELF)) {
+      continue;
+    }
+
+    /* Evaluated metaballs will appear as mesh objects in the iterator. */
+    if (ob->type == OB_MBALL) {
       continue;
     }
 
@@ -492,12 +498,16 @@ void BlenderFileLoader::insertShapeNode(Object *ob, Mesh *me, int id)
 
   FrsMaterial tmpMat;
 
+  const blender::VArray<int> material_indices =
+      blender::bke::mesh_attributes(*me).lookup_or_default<int>(
+          "material_index", ATTR_DOMAIN_FACE, 0);
+
   // We parse the vlak nodes again and import meshes while applying the clipping
   // by the near and far view planes.
   for (int a = 0; a < tottri; a++) {
     const MLoopTri *lt = &mlooptri[a];
     const MPoly *mp = &mpoly[lt->poly];
-    Material *mat = BKE_object_material_get(ob, mp->mat_nr + 1);
+    Material *mat = BKE_object_material_get(ob, material_indices[lt->poly] + 1);
 
     copy_v3_v3(v1, mvert[mloop[lt->tri[0]].v].co);
     copy_v3_v3(v2, mvert[mloop[lt->tri[1]].v].co);

@@ -32,6 +32,7 @@ struct MVert;
 struct Material;
 struct Mesh;
 struct SubdivCCG;
+struct SubsurfRuntimeData;
 
 #
 #
@@ -111,7 +112,7 @@ typedef struct Mesh_Runtime {
    * (most #eModifierTypeType_NonGeometrical modifiers). Otherwise the edit-mesh
    * data will be used for drawing, missing changes from modifiers. See T79517.
    */
-  char is_original;
+  char is_original_bmesh;
 
   /** #eMeshWrapperType and others. */
   char wrapper_type;
@@ -123,26 +124,18 @@ typedef struct Mesh_Runtime {
 
   /**
    * Settings for lazily evaluating the subdivision on the CPU if needed. These are
-   * set in the modifier when GPU subdivision can be performed.
+   * set in the modifier when GPU subdivision can be performed, and owned by the by
+   * the modifier in the object.
    */
-  SessionUUID subsurf_session_uuid;
-  char subsurf_resolution;
-  char subsurf_do_loop_normals;
-  char subsurf_apply_render;
-  char subsurf_use_optimal_display;
-
-  /* Cached from the draw code for stats display. */
-  int subsurf_totvert;
-  int subsurf_totedge;
-  int subsurf_totpoly;
-  int subsurf_totloop;
-  char _pad2[2];
+  struct SubsurfRuntimeData *subsurf_runtime_data;
+  void *_pad1;
 
   /**
    * Caches for lazily computed vertex and polygon normals. These are stored here rather than in
    * #CustomData because they can be calculated on a const mesh, and adding custom data layers on a
    * const mesh is not thread-safe.
    */
+  char _pad2[6];
   char vert_normals_dirty;
   char poly_normals_dirty;
   float (*vert_normals)[3];
@@ -168,7 +161,8 @@ typedef struct Mesh {
 
   /**
    * An array of materials, with length #totcol. These can be overridden by material slots
-   * on #Object. Indices in #MPoly.mat_nr control which material is used for every face.
+   * on #Object. Indices in the "material_index" attribute control which material is used for every
+   * face.
    */
   struct Material **mat;
 

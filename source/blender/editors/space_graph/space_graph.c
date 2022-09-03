@@ -90,7 +90,6 @@ static SpaceLink *graph_create(const ScrArea *UNUSED(area), const Scene *scene)
   BLI_addtail(&sipo->regionbase, region);
   region->regiontype = RGN_TYPE_UI;
   region->alignment = RGN_ALIGN_RIGHT;
-  region->flag = RGN_FLAG_HIDDEN;
 
   /* main region */
   region = MEM_callocN(sizeof(ARegion), "main region for graphedit");
@@ -394,7 +393,7 @@ static void graph_buttons_region_draw(const bContext *C, ARegion *region)
 static void graph_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -530,7 +529,7 @@ static void graph_region_message_subscribe(const wmRegionMessageSubscribeParams 
 static void graph_listener(const wmSpaceTypeListenerParams *params)
 {
   ScrArea *area = params->area;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
   SpaceGraph *sipo = (SpaceGraph *)area->spacedata.first;
 
   /* context changes */
@@ -626,7 +625,7 @@ static void graph_refresh_fcurve_colors(const bContext *C)
    * - we don't include ANIMFILTER_CURVEVISIBLE filter, as that will result in a
    *   mismatch between channel-colors and the drawn curves
    */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS | ANIMFILTER_FCURVESONLY);
   items = ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   /* loop over F-Curves, assigning colors */

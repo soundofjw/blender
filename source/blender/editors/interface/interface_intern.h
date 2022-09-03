@@ -25,6 +25,7 @@ struct CurveMapping;
 struct CurveProfile;
 struct ID;
 struct ImBuf;
+struct Main;
 struct Scene;
 struct bContext;
 struct bContextStore;
@@ -343,13 +344,12 @@ typedef struct uiButProgressbar {
   float progress;
 } uiButProgressbar;
 
-/** Derived struct for #UI_BTYPE_TREEROW. */
-typedef struct uiButTreeRow {
+typedef struct uiButViewItem {
   uiBut but;
 
-  uiTreeViewItemHandle *tree_item;
-  int indentation;
-} uiButTreeRow;
+  /* C-Handle to the view item this button was created for. */
+  uiViewItemHandle *view_item;
+} uiButViewItem;
 
 /** Derived struct for #UI_BTYPE_HSVCUBE. */
 typedef struct uiButHSVCube {
@@ -469,6 +469,7 @@ typedef enum uiButtonGroupFlag {
   /** The buttons in this group are inside a panel header. */
   UI_BUTTON_GROUP_PANEL_HEADER = (1 << 1),
 } uiButtonGroupFlag;
+ENUM_OPERATORS(uiButtonGroupFlag, UI_BUTTON_GROUP_PANEL_HEADER);
 
 struct uiBlock {
   uiBlock *next, *prev;
@@ -1321,6 +1322,12 @@ void ui_button_group_add_but(uiBlock *block, uiBut *but);
 void ui_button_group_replace_but_ptr(uiBlock *block, const void *old_but_ptr, uiBut *new_but);
 void ui_block_free_button_groups(uiBlock *block);
 
+/* interface_drag.cc */
+
+void ui_but_drag_free(uiBut *but);
+bool ui_but_drag_is_draggable(const uiBut *but);
+void ui_but_drag_start(struct bContext *C, uiBut *but);
+
 /* interface_align.c */
 
 bool ui_but_can_align(const uiBut *but) ATTR_WARN_UNUSED_RESULT;
@@ -1390,9 +1397,9 @@ uiBut *ui_list_row_find_mouse_over(const struct ARegion *region, const int xy[2]
 uiBut *ui_list_row_find_from_index(const struct ARegion *region,
                                    int index,
                                    uiBut *listbox) ATTR_WARN_UNUSED_RESULT;
-uiBut *ui_tree_row_find_mouse_over(const struct ARegion *region, const int xy[2])
+uiBut *ui_view_item_find_mouse_over(const struct ARegion *region, const int xy[2])
     ATTR_NONNULL(1, 2);
-uiBut *ui_tree_row_find_active(const struct ARegion *region);
+uiBut *ui_view_item_find_active(const struct ARegion *region);
 
 typedef bool (*uiButFindPollFn)(const uiBut *but, const void *customdata);
 /**
@@ -1530,14 +1537,21 @@ void ui_interface_tag_script_reload_queries(void);
 /* interface_view.cc */
 
 void ui_block_free_views(struct uiBlock *block);
-uiTreeViewHandle *ui_block_view_find_matching_in_old_block(const uiBlock *new_block,
-                                                           const uiTreeViewHandle *new_view);
-uiButTreeRow *ui_block_view_find_treerow_in_old_block(const uiBlock *new_block,
-                                                      const uiTreeViewItemHandle *new_item_handle);
+uiViewHandle *ui_block_view_find_matching_in_old_block(const uiBlock *new_block,
+                                                       const uiViewHandle *new_view);
+
+uiButViewItem *ui_block_view_find_matching_view_item_but_in_old_block(
+    const uiBlock *new_block, const uiViewItemHandle *new_item_handle);
 
 /* interface_templates.c */
 
 struct uiListType *UI_UL_cache_file_layers(void);
+
+struct ID *ui_template_id_liboverride_hierarchy_make(struct bContext *C,
+                                                     struct Main *bmain,
+                                                     struct ID *owner_id,
+                                                     struct ID *id,
+                                                     const char **r_undo_push_label);
 
 #ifdef __cplusplus
 }

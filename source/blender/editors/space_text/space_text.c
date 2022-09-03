@@ -30,6 +30,7 @@
 #include "UI_view2d.h"
 
 #include "RNA_access.h"
+#include "RNA_path.h"
 
 #include "text_format.h"
 #include "text_intern.h" /* own include */
@@ -108,7 +109,7 @@ static SpaceLink *text_duplicate(SpaceLink *sl)
 static void text_listener(const wmSpaceTypeListenerParams *params)
 {
   ScrArea *area = params->area;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
   SpaceText *st = area->spacedata.first;
 
   /* context changes */

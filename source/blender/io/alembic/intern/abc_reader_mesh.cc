@@ -20,11 +20,14 @@
 #include "DNA_object_types.h"
 
 #include "BLI_compiler_compat.h"
+#include "BLI_edgehash.h"
 #include "BLI_index_range.hh"
 #include "BLI_listbase.h"
 #include "BLI_math_geom.h"
 
 #include "BKE_geometry_set.hh"
+#include "BKE_attribute.hh"
+#include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
 #include "BKE_mesh.h"
@@ -77,10 +80,8 @@ static void assign_materials(Main *bmain,
                              const std::map<std::string, int> &mat_index_map)
 {
   std::map<std::string, int>::const_iterator it;
-  for (it = mat_index_map.begin(); it != mat_index_map.end(); ++it) {
-    if (!BKE_object_material_slot_add(bmain, ob)) {
-      return;
-    }
+  if (mat_index_map.size() > MAXMAT) {
+    return;
   }
 
   std::map<std::string, Material *> matname_to_material = build_material_map(bmain);
@@ -94,13 +95,17 @@ static void assign_materials(Main *bmain,
     mat_iter = matname_to_material.find(mat_name);
     if (mat_iter == matname_to_material.end()) {
       assigned_mat = BKE_material_add(bmain, mat_name.c_str());
+      id_us_min(&assigned_mat->id);
       matname_to_material[mat_name] = assigned_mat;
     }
     else {
       assigned_mat = mat_iter->second;
     }
 
-    BKE_object_material_assign(bmain, ob, assigned_mat, mat_index, BKE_MAT_ASSIGN_OBDATA);
+    BKE_object_material_assign_single_obdata(bmain, ob, assigned_mat, mat_index);
+  }
+  if (ob->totcol > 0) {
+    ob->actcol = 1;
   }
 }
 
@@ -309,6 +314,65 @@ static void process_normals(CDStreamConfig &config,
       process_no_normals(config);
       break;
   }
+}
+
+BLI_INLINE void read_uvs_params(CDStreamConfig &config,
+                                AbcMeshData &abc_data,
+                                const IV2fGeomParam &uv,
+                                const ISampleSelector &selector)
+{
+  if (!uv.valid()) {
+    return;
+  }
+
+  IV2fGeomParam::Sample uvsamp;
+  uv.getIndexed(uvsamp, selector);
+
+  UInt32ArraySamplePtr uvs_indices = uvsamp.getIndices();
+
+  const AbcUvScope uv_scope = get_uv_scope(uv.getScope(), config, uvs_indices);
+
+  if (uv_scope == ABC_UV_SCOPE_NONE) {
+    return;
+  }
+
+  abc_data.uv_scope = uv_scope;
+  abc_data.uvs = uvsamp.getVals();
+  abc_data.uvs_indices = uvs_indices;
+
+  std::string name = Alembic::Abc::GetSourceName(uv.getMetaData());
+
+  /* According to the convention, primary UVs should have had their name
+   * set using Alembic::Abc::SetSourceName, but you can't expect everyone
+   * to follow it! :) */
+  if (name.empty()) {
+    name = uv.getName();
+  }
+
+  void *cd_ptr = config.add_customdata_cb(config.mesh, name.c_str(), CD_MLOOPUV);
+  config.mloopuv = static_cast<MLoopUV *>(cd_ptr);
+}
+
+static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
+{
+  eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
+
+  /* unsupported custom data type -- don't do anything. */
+  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_PROP_BYTE_COLOR)) {
+    return nullptr;
+  }
+
+  void *cd_ptr = CustomData_get_layer_named(&mesh->ldata, cd_data_type, name);
+  if (cd_ptr != nullptr) {
+    /* layer already exists, so just return it. */
+    return cd_ptr;
+  }
+
+  /* Create a new layer. */
+  int numloops = mesh->totloop;
+  cd_ptr = CustomData_add_layer_named(
+      &mesh->ldata, cd_data_type, CD_SET_DEFAULT, nullptr, numloops, name);
+  return cd_ptr;
 }
 
 static void get_weight_and_index(CDStreamConfig &config,
@@ -611,7 +675,11 @@ Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
     size_t num_polys = new_mesh->totpoly;
     if (num_polys > 0) {
       std::map<std::string, int> mat_map;
-      assign_facesets_to_mpoly(sample_sel, new_mesh->mpoly, num_polys, mat_map);
+      bke::MutableAttributeAccessor attributes = bke::mesh_attributes_for_write(*new_mesh);
+      bke::SpanAttributeWriter<int> material_indices =
+          attributes.lookup_or_add_for_write_only_span<int>("material_index", ATTR_DOMAIN_FACE);
+      assign_facesets_to_material_indices(sample_sel, material_indices.span, mat_map);
+      material_indices.finish();
     }
 
     return new_mesh;
@@ -620,10 +688,9 @@ Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
   return existing_mesh;
 }
 
-void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
-                                             MPoly *mpoly,
-                                             int totpoly,
-                                             std::map<std::string, int> &r_mat_map)
+void AbcMeshReader::assign_facesets_to_material_indices(const ISampleSelector &sample_sel,
+                                                        MutableSpan<int> material_indices,
+                                                        std::map<std::string, int> &r_mat_map)
 {
   std::vector<std::string> face_sets;
   m_schema.getFaceSetNames(face_sets);
@@ -656,13 +723,12 @@ void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
     for (size_t l = 0; l < num_group_faces; l++) {
       size_t pos = (*group_faces)[l];
 
-      if (pos >= totpoly) {
+      if (pos >= material_indices.size()) {
         std::cerr << "Faceset overflow on " << faceset.getName() << '\n';
         break;
       }
 
-      MPoly &poly = mpoly[pos];
-      poly.mat_nr = assigned_mat - 1;
+      material_indices[pos] = assigned_mat - 1;
     }
   }
 }
@@ -670,7 +736,11 @@ void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
 void AbcMeshReader::readFaceSetsSample(Main *bmain, Mesh *mesh, const ISampleSelector &sample_sel)
 {
   std::map<std::string, int> mat_map;
-  assign_facesets_to_mpoly(sample_sel, mesh->mpoly, mesh->totpoly, mat_map);
+  bke::MutableAttributeAccessor attributes = bke::mesh_attributes_for_write(*mesh);
+  bke::SpanAttributeWriter<int> material_indices =
+      attributes.lookup_or_add_for_write_only_span<int>("material_index", ATTR_DOMAIN_FACE);
+  assign_facesets_to_material_indices(sample_sel, material_indices.span, mat_map);
+  material_indices.finish();
   utils::assign_materials(bmain, m_object, mat_map);
 }
 
@@ -689,7 +759,8 @@ BLI_INLINE MEdge *find_edge(MEdge *edges, int totedge, int v1, int v2)
   return nullptr;
 }
 
-static void read_subd_sample(ImportSettings *settings,
+static void read_subd_sample(const std::string &iobject_full_name,
+                             ImportSettings *settings,
                              const ISubDSchema &schema,
                              const ISampleSelector &selector,
                              CDStreamConfig &config)
@@ -735,7 +806,7 @@ static void read_vertex_creases(Mesh *mesh,
   }
 
   float *vertex_crease_data = (float *)CustomData_add_layer(
-      &mesh->vdata, CD_CREASE, CD_DEFAULT, nullptr, mesh->totvert);
+      &mesh->vdata, CD_CREASE, CD_SET_DEFAULT, nullptr, mesh->totvert);
   const int totvert = mesh->totvert;
 
   for (int i = 0, v = indices->size(); i < v; ++i) {
@@ -760,7 +831,14 @@ static void read_edge_creases(Mesh *mesh,
   }
 
   MEdge *edges = mesh->medge;
-  int totedge = mesh->totedge;
+  const int totedge = mesh->totedge;
+
+  EdgeHash *edge_hash = BLI_edgehash_new_ex(__func__, mesh->totedge);
+
+  for (int i = 0; i < totedge; i++) {
+    MEdge *edge = &edges[i];
+    BLI_edgehash_insert(edge_hash, edge->v1, edge->v2, edge);
+  }
 
   for (int i = 0, s = 0, e = indices->size(); i < e; i += 2, s++) {
     int v1 = (*indices)[i];
@@ -772,15 +850,17 @@ static void read_edge_creases(Mesh *mesh,
       std::swap(v1, v2);
     }
 
-    MEdge *edge = find_edge(edges, totedge, v1, v2);
+    MEdge *edge = static_cast<MEdge *>(BLI_edgehash_lookup(edge_hash, v1, v2));
     if (edge == nullptr) {
-      edge = find_edge(edges, totedge, v2, v1);
+      edge = static_cast<MEdge *>(BLI_edgehash_lookup(edge_hash, v2, v1));
     }
 
     if (edge) {
       edge->crease = unit_float_to_uchar_clamp((*sharpnesses)[s]);
     }
   }
+
+  BLI_edgehash_free(edge_hash, nullptr);
 
   mesh->cd_flag |= ME_CDFLAG_EDGE_CREASE;
 }

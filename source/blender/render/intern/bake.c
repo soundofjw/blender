@@ -72,7 +72,6 @@
 #include "RE_texture_margin.h"
 
 /* local include */
-#include "render_types.h"
 #include "zbuf.h"
 
 typedef struct BakeDataZSpan {
@@ -741,14 +740,15 @@ void RE_bake_pixels_populate(Mesh *me,
 
   BKE_mesh_recalc_looptri(me->mloop, me->mpoly, me->mvert, me->totloop, me->totpoly, looptri);
 
+  const int *material_indices = BKE_mesh_material_indices(me);
+
   for (int i = 0; i < tottri; i++) {
     const MLoopTri *lt = &looptri[i];
-    const MPoly *mp = &me->mpoly[lt->poly];
 
     bd.primitive_id = i;
 
     /* Find images matching this material. */
-    Image *image = targets->material_to_image[mp->mat_nr];
+    Image *image = targets->material_to_image[material_indices ? material_indices[lt->poly] : 0];
     for (int image_id = 0; image_id < targets->images_num; image_id++) {
       BakeImage *bk_image = &targets->images[image_id];
       if (bk_image->image != image) {
@@ -760,8 +760,8 @@ void RE_bake_pixels_populate(Mesh *me,
       for (int a = 0; a < 3; a++) {
         const float *uv = mloopuv[lt->tri[a]].uv;
 
-        /* NOTE(campbell): workaround for pixel aligned UVs which are common and can screw up our
-         * intersection tests where a pixel gets in between 2 faces or the middle of a quad,
+        /* NOTE(@campbellbarton): workaround for pixel aligned UVs which are common and can screw
+         * up our intersection tests where a pixel gets in between 2 faces or the middle of a quad,
          * camera aligned quads also have this problem but they are less common.
          * Add a small offset to the UVs, fixes bug T18685. */
         vec[a][0] = (uv[0] - bk_image->uv_offset[0]) * (float)bk_image->width - (0.5f + 0.001f);

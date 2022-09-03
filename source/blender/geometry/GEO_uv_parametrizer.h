@@ -13,7 +13,8 @@ extern "C" {
 #endif
 
 typedef struct ParamHandle ParamHandle; /* Handle to an array of charts. */
-typedef intptr_t ParamKey;              /* Key (hash) for identifying verts and faces. */
+typedef uintptr_t ParamKey;             /* Key (hash) for identifying verts and faces. */
+#define PARAM_KEY_MAX UINTPTR_MAX
 
 /* -------------------------------------------------------------------- */
 /** \name Chart Construction:
@@ -33,6 +34,10 @@ typedef intptr_t ParamKey;              /* Key (hash) for identifying verts and 
 ParamHandle *GEO_uv_parametrizer_construct_begin(void);
 
 void GEO_uv_parametrizer_aspect_ratio(ParamHandle *handle, float aspx, float aspy);
+
+void GEO_uv_prepare_pin_index(ParamHandle *handle, const int bmvertindex, const float uv[2]);
+
+ParamKey GEO_uv_find_pin_index(ParamHandle *handle, const int bmvertindex, const float uv[2]);
 
 void GEO_uv_parametrizer_face_add(ParamHandle *handle,
                                   const ParamKey key,
@@ -98,7 +103,10 @@ void GEO_uv_parametrizer_pack(ParamHandle *handle,
 /** \name Average area for all charts
  * \{ */
 
-void GEO_uv_parametrizer_average(ParamHandle *handle, bool ignore_pinned);
+void GEO_uv_parametrizer_average(ParamHandle *handle,
+                                 bool ignore_pinned,
+                                 bool scale_uv,
+                                 bool shear);
 
 /** \} */
 

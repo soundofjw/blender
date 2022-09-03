@@ -449,7 +449,7 @@ static void object_foreach_id(ID *id, LibraryForeachIDData *data)
 
     if (object->soft->effector_weights) {
       BKE_LIB_FOREACHID_PROCESS_IDSUPER(
-          data, object->soft->effector_weights->group, IDWALK_CB_NOP);
+          data, object->soft->effector_weights->group, IDWALK_CB_USER);
     }
   }
 }
@@ -1402,6 +1402,7 @@ bool BKE_object_supports_modifiers(const Object *ob)
 {
   return (ELEM(ob->type,
                OB_MESH,
+               OB_CURVES,
                OB_CURVES_LEGACY,
                OB_SURF,
                OB_FONT,
@@ -1664,7 +1665,7 @@ static void copy_ccg_data(Mesh *mesh_destination, Mesh *mesh_source, int layer_t
   const int layer_index = CustomData_get_layer_index(data_destination, layer_type);
   CustomData_free_layer(data_destination, layer_type, num_elements, layer_index);
   BLI_assert(!CustomData_has_layer(data_destination, layer_type));
-  CustomData_add_layer(data_destination, layer_type, CD_CALLOC, nullptr, num_elements);
+  CustomData_add_layer(data_destination, layer_type, CD_SET_DEFAULT, nullptr, num_elements);
   BLI_assert(CustomData_has_layer(data_destination, layer_type));
   CustomData_copy_layer_type_data(data_source, data_destination, layer_type, 0, 0, num_elements);
 }
@@ -2273,7 +2274,7 @@ Object *BKE_object_add(Main *bmain, ViewLayer *view_layer, int type, const char 
   LayerCollection *layer_collection = BKE_layer_collection_get_active(view_layer);
   BKE_collection_viewlayer_object_add(bmain, view_layer, layer_collection->collection, ob);
 
-  /* Note: There is no way to be sure that #BKE_collection_viewlayer_object_add will actually
+  /* NOTE: There is no way to be sure that #BKE_collection_viewlayer_object_add will actually
    * manage to find a valid collection in given `view_layer` to add the new object to. */
   Base *base = BKE_view_layer_base_find(view_layer, ob);
   if (base != nullptr) {
@@ -2546,7 +2547,7 @@ Object **BKE_object_pose_array_get_ex(ViewLayer *view_layer,
                                       uint *r_objects_len,
                                       bool unique)
 {
-  Object *ob_active = OBACT(view_layer);
+  Object *ob_active = BKE_view_layer_active_object_get(view_layer);
   Object *ob_pose = BKE_object_pose_armature_get(ob_active);
   Object **objects = nullptr;
   if (ob_pose == ob_active) {
@@ -2582,7 +2583,7 @@ Base **BKE_object_pose_base_array_get_ex(ViewLayer *view_layer,
                                          uint *r_bases_len,
                                          bool unique)
 {
-  Base *base_active = BASACT(view_layer);
+  Base *base_active = view_layer->basact;
   Object *ob_pose = base_active ? BKE_object_pose_armature_get(base_active->object) : nullptr;
   Base *base_pose = nullptr;
   Base **bases = nullptr;
@@ -3985,6 +3986,70 @@ bool BKE_object_empty_image_data_is_visible_in_view3d(const Object *ob, const Re
   return true;
 }
 
+bool BKE_object_minmax_empty_drawtype(const struct Object *ob, float r_min[3], float r_max[3])
+{
+  BLI_assert(ob->type == OB_EMPTY);
+  float3 min(0), max(0);
+
+  bool ok = false;
+  const float radius = ob->empty_drawsize;
+
+  switch (ob->empty_drawtype) {
+    case OB_ARROWS: {
+      max = float3(radius);
+      ok = true;
+      break;
+    }
+    case OB_PLAINAXES:
+    case OB_CUBE:
+    case OB_EMPTY_SPHERE: {
+      min = float3(-radius);
+      max = float3(radius);
+      ok = true;
+      break;
+    }
+    case OB_CIRCLE: {
+      max[0] = max[2] = radius;
+      min[0] = min[2] = -radius;
+      ok = true;
+      break;
+    }
+    case OB_SINGLE_ARROW: {
+      max[2] = radius;
+      ok = true;
+      break;
+    }
+    case OB_EMPTY_CONE: {
+      min = float3(-radius, 0.0f, -radius);
+      max = float3(radius, radius * 2.0f, radius);
+      ok = true;
+      break;
+    }
+    case OB_EMPTY_IMAGE: {
+      const float *ofs = ob->ima_ofs;
+      /* NOTE: this is the best approximation that can be calculated without loading the image. */
+      min[0] = ofs[0] * radius;
+      min[1] = ofs[1] * radius;
+      max[0] = radius + (ofs[0] * radius);
+      max[1] = radius + (ofs[1] * radius);
+      /* Since the image aspect can shrink the bounds towards the object origin,
+       * adjust the min/max to account for that.  */
+      for (int i = 0; i < 2; i++) {
+        CLAMP_MAX(min[i], 0.0f);
+        CLAMP_MIN(max[i], 0.0f);
+      }
+      ok = true;
+      break;
+    }
+  }
+
+  if (ok) {
+    copy_v3_v3(r_min, min);
+    copy_v3_v3(r_max, max);
+  }
+  return ok;
+}
+
 bool BKE_object_minmax_dupli(Depsgraph *depsgraph,
                              Scene *scene,
                              Object *ob,
@@ -4318,7 +4383,7 @@ Mesh *BKE_object_get_evaluated_mesh(const Object *object)
   }
 
   if (object->data && GS(((const ID *)object->data)->name) == ID_ME) {
-    mesh = BKE_mesh_wrapper_ensure_subdivision(object, mesh);
+    mesh = BKE_mesh_wrapper_ensure_subdivision(mesh);
   }
 
   return mesh;
@@ -5292,126 +5357,6 @@ KDTree_3d *BKE_object_as_kdtree(Object *ob, int *r_tot)
 /* -------------------------------------------------------------------- */
 /** \name Object Modifier Utilities
  * \{ */
-
-bool BKE_object_modifier_use_time(Scene *scene, Object *ob, ModifierData *md)
-{
-  if (BKE_modifier_depends_ontime(scene, md)) {
-    return true;
-  }
-
-  /* Check whether modifier is animated. */
-  /* TODO: this should be handled as part of build_animdata() -- Aligorith */
-  if (ob->adt) {
-    AnimData *adt = ob->adt;
-    FCurve *fcu;
-
-    char md_name_esc[sizeof(md->name) * 2];
-    BLI_str_escape(md_name_esc, md->name, sizeof(md_name_esc));
-
-    char pattern[sizeof(md_name_esc) + 16];
-    BLI_snprintf(pattern, sizeof(pattern), "modifiers[\"%s\"]", md_name_esc);
-
-    /* action - check for F-Curves with paths containing 'modifiers[' */
-    if (adt->action) {
-      for (fcu = (FCurve *)adt->action->curves.first; fcu != nullptr; fcu = (FCurve *)fcu->next) {
-        if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-          return true;
-        }
-      }
-    }
-
-    /* This here allows modifier properties to get driven and still update properly
-     *
-     * Workaround to get T26764 (e.g. subsurf levels not updating when animated/driven)
-     * working, without the updating problems (T28525 T28690 T28774 T28777) caused
-     * by the RNA updates cache introduced in r.38649
-     */
-    for (fcu = (FCurve *)adt->drivers.first; fcu != nullptr; fcu = (FCurve *)fcu->next) {
-      if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-        return true;
-      }
-    }
-
-    /* XXX: also, should check NLA strips, though for now assume that nobody uses
-     * that and we can omit that for performance reasons... */
-  }
-
-  return false;
-}
-
-bool BKE_object_modifier_gpencil_use_time(Object *ob, GpencilModifierData *md)
-{
-  if (BKE_gpencil_modifier_depends_ontime(md)) {
-    return true;
-  }
-
-  /* Check whether modifier is animated. */
-  /* TODO(Aligorith): this should be handled as part of build_animdata() */
-  if (ob->adt) {
-    AnimData *adt = ob->adt;
-
-    char md_name_esc[sizeof(md->name) * 2];
-    BLI_str_escape(md_name_esc, md->name, sizeof(md_name_esc));
-
-    char pattern[sizeof(md_name_esc) + 32];
-    BLI_snprintf(pattern, sizeof(pattern), "grease_pencil_modifiers[\"%s\"]", md_name_esc);
-
-    /* action - check for F-Curves with paths containing 'grease_pencil_modifiers[' */
-    if (adt->action) {
-      LISTBASE_FOREACH (FCurve *, fcu, &adt->action->curves) {
-        if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-          return true;
-        }
-      }
-    }
-
-    /* This here allows modifier properties to get driven and still update properly */
-    LISTBASE_FOREACH (FCurve *, fcu, &adt->drivers) {
-      if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-bool BKE_object_shaderfx_use_time(Object *ob, ShaderFxData *fx)
-{
-  if (BKE_shaderfx_depends_ontime(fx)) {
-    return true;
-  }
-
-  /* Check whether effect is animated. */
-  /* TODO(Aligorith): this should be handled as part of build_animdata() */
-  if (ob->adt) {
-    AnimData *adt = ob->adt;
-
-    char fx_name_esc[sizeof(fx->name) * 2];
-    BLI_str_escape(fx_name_esc, fx->name, sizeof(fx_name_esc));
-
-    char pattern[sizeof(fx_name_esc) + 32];
-    BLI_snprintf(pattern, sizeof(pattern), "shader_effects[\"%s\"]", fx_name_esc);
-
-    /* action - check for F-Curves with paths containing string[' */
-    if (adt->action) {
-      LISTBASE_FOREACH (FCurve *, fcu, &adt->action->curves) {
-        if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-          return true;
-        }
-      }
-    }
-
-    /* This here allows properties to get driven and still update properly */
-    LISTBASE_FOREACH (FCurve *, fcu, &adt->drivers) {
-      if (fcu->rna_path && strstr(fcu->rna_path, pattern)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
 
 /**
  * Set "ignore cache" flag for all caches on this object.

@@ -782,7 +782,6 @@ def brush_settings(layout, context, brush, popover=False):
     elif mode == 'SCULPT_CURVES':
         if brush.curves_sculpt_tool == 'ADD':
             layout.prop(brush.curves_sculpt_settings, "add_amount")
-            layout.prop(brush.curves_sculpt_settings, "curve_length")
             col = layout.column(heading="Interpolate", align=True)
             col.prop(brush.curves_sculpt_settings, "interpolate_length", text="Length")
             col.prop(brush.curves_sculpt_settings, "interpolate_shape", text="Shape")
@@ -1316,7 +1315,11 @@ def brush_basic_gpencil_paint_settings(layout, context, brush, *, compact=False)
 
 
 def brush_basic_gpencil_sculpt_settings(layout, _context, brush, *, compact=False):
+    if brush is None:
+        return
     gp_settings = brush.gpencil_settings
+    if gp_settings is None:
+        return
     tool = brush.gpencil_sculpt_tool
 
     row = layout.row(align=True)

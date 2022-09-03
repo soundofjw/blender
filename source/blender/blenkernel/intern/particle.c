@@ -58,6 +58,7 @@
 #include "BKE_main.h"
 #include "BKE_material.h"
 #include "BKE_mesh.h"
+#include "BKE_mesh_legacy_convert.h"
 #include "BKE_modifier.h"
 #include "BKE_object.h"
 #include "BKE_particle.h"
@@ -170,7 +171,7 @@ static void particle_settings_foreach_id(ID *id, LibraryForeachIDData *data)
   }
 
   if (psett->effector_weights) {
-    BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, psett->effector_weights->group, IDWALK_CB_NOP);
+    BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, psett->effector_weights->group, IDWALK_CB_USER);
   }
 
   if (psett->pd) {
@@ -3493,7 +3494,7 @@ void psys_cache_paths(ParticleSimulationData *sim, float cfra, const bool use_re
      * initial tangent, but taking that in to account will allow
      * the possibility of flipping again. -jahka
      */
-    mat3_to_quat_is_ok(cache[p]->rot, rotmat);
+    mat3_to_quat_legacy(cache[p]->rot, rotmat);
   }
 
   psys->totcached = totpart;
@@ -3683,7 +3684,7 @@ static void psys_cache_edit_paths_iter(void *__restrict iter_data_v,
      * initial tangent, but taking that in to account will allow
      * the possibility of flipping again. -jahka
      */
-    mat3_to_quat_is_ok(cache[iter]->rot, rotmat);
+    mat3_to_quat_legacy(cache[iter]->rot, rotmat);
   }
 }
 
@@ -5412,8 +5413,8 @@ void BKE_particle_system_blend_read_lib(BlendLibReader *reader,
       BLO_read_id_address(reader, id->lib, &psys->target_ob);
 
       if (psys->clmd) {
-        /* XXX(campbell): from reading existing code this seems correct but intended usage of
-         * pointcache /w cloth should be added in 'ParticleSystem'. */
+        /* XXX(@campbellbarton): from reading existing code this seems correct but intended usage
+         * of pointcache /w cloth should be added in 'ParticleSystem'. */
         psys->clmd->point_cache = psys->pointcache;
         psys->clmd->ptcaches.first = psys->clmd->ptcaches.last = NULL;
         BLO_read_id_address(reader, id->lib, &psys->clmd->coll_parms->group);

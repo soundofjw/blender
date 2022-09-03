@@ -144,10 +144,10 @@ static int wm_alembic_export_exec(bContext *C, wmOperator *op)
   /* Take some defaults from the scene, if not specified explicitly. */
   Scene *scene = CTX_data_scene(C);
   if (params.frame_start == INT_MIN) {
-    params.frame_start = SFRA;
+    params.frame_start = scene->r.sfra;
   }
   if (params.frame_end == INT_MIN) {
-    params.frame_end = EFRA;
+    params.frame_end = scene->r.efra;
   }
 
   const bool as_background_job = RNA_boolean_get(op->ptr, "as_background_job");
@@ -248,8 +248,8 @@ static void wm_alembic_export_draw(bContext *C, wmOperator *op)
   Scene *scene = CTX_data_scene(C);
 
   if (scene != NULL && RNA_boolean_get(op->ptr, "init_scene_frame_range")) {
-    RNA_int_set(op->ptr, "start", SFRA);
-    RNA_int_set(op->ptr, "end", EFRA);
+    RNA_int_set(op->ptr, "start", scene->r.sfra);
+    RNA_int_set(op->ptr, "end", scene->r.efra);
 
     RNA_boolean_set(op->ptr, "init_scene_frame_range", false);
   }
@@ -651,16 +651,16 @@ static int wm_alembic_import_exec(bContext *C, wmOperator *op)
     ED_object_mode_set(C, OB_MODE_OBJECT);
   }
 
-  bool ok = ABC_import(C,
-                       filename,
-                       scale,
-                       is_sequence,
-                       set_frame_range,
-                       sequence_len,
-                       offset,
-                       validate_meshes,
-                       always_add_cache_reader,
-                       as_background_job);
+  struct AlembicImportParams params = {0};
+  params.global_scale = scale;
+  params.sequence_len = sequence_len;
+  params.sequence_offset = offset;
+  params.is_sequence = is_sequence;
+  params.set_frame_range = set_frame_range;
+  params.validate_meshes = validate_meshes;
+  params.always_add_cache_reader = always_add_cache_reader;
+
+  bool ok = ABC_import(C, filename, &params, as_background_job);
 
   return as_background_job || ok ? OPERATOR_FINISHED : OPERATOR_CANCELLED;
 }

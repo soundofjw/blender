@@ -1173,6 +1173,7 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
       BKE_curveprofile_blend_read(reader, sce->toolsettings->custom_bevel_profile_preset);
     }
 
+    BLO_read_data_address(reader, &sce->toolsettings->paint_mode.canvas_image);
     BLO_read_data_address(reader, &sce->toolsettings->sequencer_tool_settings);
   }
 
@@ -1480,7 +1481,7 @@ static void scene_blend_read_lib(BlendLibReader *reader, ID *id)
   }
 
   LISTBASE_FOREACH (TimeMarker *, marker, &sce->markers) {
-    IDP_BlendReadLib(reader, marker->prop);
+    IDP_BlendReadLib(reader, sce->id.lib, marker->prop);
 
     if (marker->camera) {
       BLO_read_id_address(reader, sce->id.lib, &marker->camera);
@@ -2500,7 +2501,7 @@ static bool check_rendered_viewport_visible(Main *bmain)
   return false;
 }
 
-/* TODO(campbell): shouldn't we be able to use 'DEG_get_view_layer' here?
+/* TODO(@campbellbarton): shouldn't we be able to use 'DEG_get_view_layer' here?
  * Currently this is nullptr on load, so don't. */
 static void prepare_mesh_for_viewport_render(Main *bmain, const ViewLayer *view_layer)
 {
@@ -2513,7 +2514,7 @@ static void prepare_mesh_for_viewport_render(Main *bmain, const ViewLayer *view_
    * call loading of the edit data for the mesh objects.
    */
 
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit) {
     Mesh *mesh = static_cast<Mesh *>(obedit->data);
     if ((obedit->type == OB_MESH) &&
@@ -2590,7 +2591,7 @@ static void scene_graph_update_tagged(Depsgraph *depsgraph, Main *bmain, bool on
     // DEG_debug_graph_relations_validate(depsgraph, bmain, scene);
     /* Flush editing data if needed. */
     prepare_mesh_for_viewport_render(bmain, view_layer);
-    /* Update all objects: drivers, matrices, #DispList, etc. flags set
+    /* Update all objects: drivers, matrices, etc. flags set
      * by depsgraph or manual, no layer check here, gets correct flushed. */
     DEG_evaluate_on_refresh(depsgraph);
     /* Update sound system. */
@@ -2665,7 +2666,7 @@ void BKE_scene_graph_update_for_newframe_ex(Depsgraph *depsgraph, const bool cle
     BKE_image_editors_update_frame(bmain, scene->r.cfra);
     BKE_sound_set_cfra(scene->r.cfra);
     DEG_graph_relations_update(depsgraph);
-    /* Update all objects: drivers, matrices, #DispList, etc. flags set
+    /* Update all objects: drivers, matrices, etc. flags set
      * by depsgraph or manual, no layer check here, gets correct flushed.
      *
      * NOTE: Only update for new frame on first iteration. Second iteration is for ensuring user
@@ -2949,6 +2950,20 @@ int BKE_render_num_threads(const RenderData *rd)
 int BKE_scene_num_threads(const Scene *scene)
 {
   return BKE_render_num_threads(&scene->r);
+}
+
+void BKE_render_resolution(const struct RenderData *r,
+                           const bool use_crop,
+                           int *r_width,
+                           int *r_height)
+{
+  *r_width = (r->xsch * r->size) / 100;
+  *r_height = (r->ysch * r->size) / 100;
+
+  if (use_crop && (r->mode & R_BORDER) && (r->mode & R_CROP)) {
+    *r_width *= BLI_rctf_size_x(&r->border);
+    *r_height *= BLI_rctf_size_y(&r->border);
+  }
 }
 
 int BKE_render_preview_pixel_size(const RenderData *r)

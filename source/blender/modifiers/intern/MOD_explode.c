@@ -26,6 +26,7 @@
 #include "BKE_lattice.h"
 #include "BKE_lib_id.h"
 #include "BKE_mesh.h"
+#include "BKE_mesh_legacy_convert.h"
 #include "BKE_modifier.h"
 #include "BKE_particle.h"
 #include "BKE_scene.h"
@@ -741,7 +742,7 @@ static Mesh *cutEdges(ExplodeModifierData *emd, Mesh *mesh)
 
   /* override original facepa (original pointer is saved in caller function) */
 
-  /* TODO(campbell): `(totfsplit * 2)` over allocation is used since the quads are
+  /* TODO(@campbellbarton): `(totfsplit * 2)` over allocation is used since the quads are
    * later interpreted as tri's, for this to work right I think we probably
    * have to stop using tessface. */
 
@@ -1223,7 +1224,7 @@ static void blendRead(BlendDataReader *UNUSED(reader), ModifierData *md)
 }
 
 ModifierTypeInfo modifierType_Explode = {
-    /* name */ "Explode",
+    /* name */ N_("Explode"),
     /* structName */ "ExplodeModifierData",
     /* structSize */ sizeof(ExplodeModifierData),
     /* srna */ &RNA_ExplodeModifier,

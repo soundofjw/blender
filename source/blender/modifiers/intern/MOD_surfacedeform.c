@@ -215,8 +215,7 @@ static void freeData(ModifierData *md)
           MEM_SAFE_FREE(smd->verts[i].binds[j].vert_inds);
           MEM_SAFE_FREE(smd->verts[i].binds[j].vert_weights);
         }
-
-        MEM_SAFE_FREE(smd->verts[i].binds);
+        MEM_freeN(smd->verts[i].binds);
       }
     }
 
@@ -1449,7 +1448,7 @@ static void surfacedeformModifier_do(ModifierData *md,
   }
 
   Object *ob_target = smd->target;
-  target = BKE_modifier_get_evaluated_mesh_from_evaluated_object(ob_target, false);
+  target = BKE_modifier_get_evaluated_mesh_from_evaluated_object(ob_target);
   if (!target) {
     BKE_modifier_set_error(ob, md, "No valid target mesh");
     return;
@@ -1521,11 +1520,11 @@ static void surfacedeformModifier_do(ModifierData *md,
      * added after the original ones. This covers typical case when target was at the subdivision
      * level 0 and then subdivision was increased (i.e. for the render purposes). */
 
-    BKE_modifier_set_error(ob,
-                           md,
-                           "Target vertices changed from %u to %u, continuing anyway",
-                           smd->target_verts_num,
-                           target_verts_num);
+    BKE_modifier_set_warning(ob,
+                             md,
+                             "Target vertices changed from %u to %u, continuing anyway",
+                             smd->target_verts_num,
+                             target_verts_num);
 
     /* In theory we only need the `smd->verts_num` vertices in the `targetCos` for evaluation, but
      * it is not currently possible to request a subset of coordinates: the API expects that the
@@ -1578,7 +1577,7 @@ static void deformVerts(ModifierData *md,
 
   if (smd->defgrp_name[0] != '\0') {
     /* Only need to use mesh_src when a vgroup is used. */
-    mesh_src = MOD_deform_mesh_eval_get(ctx->object, NULL, mesh, NULL, verts_num, false, false);
+    mesh_src = MOD_deform_mesh_eval_get(ctx->object, NULL, mesh, NULL, verts_num, false);
   }
 
   surfacedeformModifier_do(md, ctx, vertexCos, verts_num, ctx->object, mesh_src);
@@ -1600,7 +1599,12 @@ static void deformVertsEM(ModifierData *md,
 
   if (smd->defgrp_name[0] != '\0') {
     /* Only need to use mesh_src when a vgroup is used. */
-    mesh_src = MOD_deform_mesh_eval_get(ctx->object, em, mesh, NULL, verts_num, false, false);
+    mesh_src = MOD_deform_mesh_eval_get(ctx->object, em, mesh, NULL, verts_num, false);
+  }
+
+  /* TODO(@campbellbarton): use edit-mode data only (remove this line). */
+  if (mesh_src != NULL) {
+    BKE_mesh_wrapper_ensure_mdata(mesh_src);
   }
 
   surfacedeformModifier_do(md, ctx, vertexCos, verts_num, ctx->object, mesh_src);
@@ -1741,7 +1745,7 @@ static void blendRead(BlendDataReader *reader, ModifierData *md)
 }
 
 ModifierTypeInfo modifierType_SurfaceDeform = {
-    /* name */ "SurfaceDeform",
+    /* name */ N_("SurfaceDeform"),
     /* structName */ "SurfaceDeformModifierData",
     /* structSize */ sizeof(SurfaceDeformModifierData),
     /* srna */ &RNA_SurfaceDeformModifier,

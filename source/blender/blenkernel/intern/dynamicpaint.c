@@ -1944,7 +1944,7 @@ static Mesh *dynamicPaint_Modifier_apply(DynamicPaintModifierData *pmd, Object *
             if (!mloopcol && dynamicPaint_outputLayerExists(surface, ob, 0)) {
               mloopcol = CustomData_add_layer_named(&result->ldata,
                                                     CD_PROP_BYTE_COLOR,
-                                                    CD_CALLOC,
+                                                    CD_SET_DEFAULT,
                                                     NULL,
                                                     totloop,
                                                     surface->output_name);
@@ -1957,7 +1957,7 @@ static Mesh *dynamicPaint_Modifier_apply(DynamicPaintModifierData *pmd, Object *
             if (!mloopcol_wet && dynamicPaint_outputLayerExists(surface, ob, 1)) {
               mloopcol_wet = CustomData_add_layer_named(&result->ldata,
                                                         CD_PROP_BYTE_COLOR,
-                                                        CD_CALLOC,
+                                                        CD_SET_DEFAULT,
                                                         NULL,
                                                         totloop,
                                                         surface->output_name2);
@@ -1988,7 +1988,7 @@ static Mesh *dynamicPaint_Modifier_apply(DynamicPaintModifierData *pmd, Object *
             /* apply weights into a vertex group, if doesn't exists add a new layer */
             if (defgrp_index != -1 && !dvert && (surface->output_name[0] != '\0')) {
               dvert = CustomData_add_layer(
-                  &result->vdata, CD_MDEFORMVERT, CD_CALLOC, NULL, sData->total_points);
+                  &result->vdata, CD_MDEFORMVERT, CD_SET_DEFAULT, NULL, sData->total_points);
               /* Make the dvert layer easily accessible from the mesh data. */
               result->dvert = dvert;
             }
@@ -2024,13 +2024,13 @@ static Mesh *dynamicPaint_Modifier_apply(DynamicPaintModifierData *pmd, Object *
             settings.use_threading = (sData->total_points > 1000);
             BLI_task_parallel_range(
                 0, sData->total_points, &data, dynamic_paint_apply_surface_wave_cb, &settings);
-            BKE_mesh_normals_tag_dirty(mesh);
+            BKE_mesh_tag_coords_changed(result);
           }
 
           /* displace */
           if (surface->type == MOD_DPAINT_SURFACE_T_DISPLACE) {
             dynamicPaint_applySurfaceDisplace(surface, result);
-            BKE_mesh_normals_tag_dirty(mesh);
+            BKE_mesh_tag_coords_changed(result);
           }
         }
       }
@@ -2552,7 +2552,7 @@ static void dynamic_paint_find_island_border(const DynamicPaintCreateUVSurfaceDa
     const int vert1 = mloop[loop_idx[(edge_idx + 1) % 3]].v;
 
     /* Use a pre-computed vert-to-looptri mapping,
-     * speeds up things a lot compared to looping over all loopti. */
+     * speeds up things a lot compared to looping over all looptri. */
     const MeshElemMap *map = &bdata->vert_to_looptri_map[vert0];
 
     bool found_other = false;

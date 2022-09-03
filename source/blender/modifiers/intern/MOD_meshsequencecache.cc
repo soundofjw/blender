@@ -501,7 +501,7 @@ static void blendRead(BlendDataReader *UNUSED(reader), ModifierData *md)
 }
 
 ModifierTypeInfo modifierType_MeshSequenceCache = {
-    /* name */ "MeshSequenceCache",
+    /* name */ N_("MeshSequenceCache"),
     /* structName */ "MeshSeqCacheModifierData",
     /* structSize */ sizeof(MeshSeqCacheModifierData),
     /* srna */ &RNA_MeshSequenceCacheModifier,

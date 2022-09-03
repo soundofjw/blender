@@ -43,6 +43,7 @@
 #include "DNA_world_types.h"
 
 #include "RNA_access.h"
+#include "RNA_path.h"
 #include "RNA_prototypes.h"
 
 #include "BKE_anim_data.h"
@@ -3123,7 +3124,7 @@ static bAnimChannelType ACF_DSSIMULATION = {
 /* TODO: just get this from RNA? */
 static int acf_dsgpencil_icon(bAnimListElem *UNUSED(ale))
 {
-  return ICON_GREASEPENCIL;
+  return ICON_OUTLINER_DATA_GREASEPENCIL;
 }
 
 /* Get the appropriate flag(s) for the setting when it is valid. */
@@ -4747,13 +4748,13 @@ static void achannel_setting_slider_cb(bContext *C, void *id_poin, void *fcu_poi
   RNA_id_pointer_create(id, &id_ptr);
 
   /* Get NLA context for value remapping */
-  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(depsgraph,
-                                                                                    (float)CFRA);
+  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(
+      depsgraph, (float)scene->r.cfra);
   NlaKeyframingContext *nla_context = BKE_animsys_get_nla_keyframing_context(
       &nla_cache, &id_ptr, adt, &anim_eval_context);
 
   /* get current frame and apply NLA-mapping to it (if applicable) */
-  cfra = BKE_nla_tweakedit_remap(adt, (float)CFRA, NLATIME_CONVERT_UNMAP);
+  cfra = BKE_nla_tweakedit_remap(adt, (float)scene->r.cfra, NLATIME_CONVERT_UNMAP);
 
   /* Get flags for keyframing. */
   flag = ANIM_get_keyframing_flags(scene, true);
@@ -4803,8 +4804,8 @@ static void achannel_setting_slider_shapekey_cb(bContext *C, void *key_poin, voi
   RNA_id_pointer_create((ID *)key, &id_ptr);
 
   /* Get NLA context for value remapping */
-  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(depsgraph,
-                                                                                    (float)CFRA);
+  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(
+      depsgraph, (float)scene->r.cfra);
   NlaKeyframingContext *nla_context = BKE_animsys_get_nla_keyframing_context(
       &nla_cache, &id_ptr, key->adt, &anim_eval_context);
 
@@ -4872,7 +4873,7 @@ static void achannel_setting_slider_nla_curve_cb(bContext *C,
   float cfra;
 
   /* get current frame - *no* NLA mapping should be done */
-  cfra = (float)CFRA;
+  cfra = (float)scene->r.cfra;
 
   /* get flags for keyframing */
   flag = ANIM_get_keyframing_flags(scene, true);

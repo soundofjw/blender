@@ -594,6 +594,10 @@ static void *undomesh_from_editmesh(UndoMesh *um, BMEditMesh *em, Key *key, Undo
   /* Uncomment for troubleshooting. */
   // BM_mesh_validate(em->bm);
 
+  /* Copy the ID name characters to the mesh so code that depends on accessing the ID type can work
+   * on it. Necessary to use the attribute API. */
+  strcpy(um->me.id.name, "MEundomesh_from_editmesh");
+
   BM_mesh_bm_to_me(
       NULL,
       em->bm,
@@ -732,7 +736,7 @@ static void undomesh_free_data(UndoMesh *um)
 static Object *editmesh_object_from_context(bContext *C)
 {
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit && obedit->type == OB_MESH) {
     Mesh *me = obedit->data;
     if (me->edit_mesh != NULL) {

@@ -114,7 +114,7 @@ static void deformVerts(ModifierData *md,
     surmd->mesh = (Mesh *)BKE_id_copy_ex(NULL, (ID *)mesh, NULL, LIB_ID_COPY_LOCALIZE);
   }
   else {
-    surmd->mesh = MOD_deform_mesh_eval_get(ctx->object, NULL, NULL, NULL, verts_num, false, false);
+    surmd->mesh = MOD_deform_mesh_eval_get(ctx->object, NULL, NULL, NULL, verts_num, false);
   }
 
   if (!ctx->object->pd) {
@@ -211,7 +211,7 @@ static void blendRead(BlendDataReader *UNUSED(reader), ModifierData *md)
 }
 
 ModifierTypeInfo modifierType_Surface = {
-    /* name */ "Surface",
+    /* name */ N_("Surface"),
     /* structName */ "SurfaceModifierData",
     /* structSize */ sizeof(SurfaceModifierData),
     /* srna */ &RNA_SurfaceModifier,

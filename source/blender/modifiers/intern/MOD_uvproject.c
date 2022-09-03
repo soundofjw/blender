@@ -80,7 +80,7 @@ static void updateDepsgraph(ModifierData *md, const ModifierUpdateDepsgraphConte
     }
   }
   if (do_add_own_transform) {
-    DEG_add_modifier_to_transform_relation(ctx->node, "UV Project Modifier");
+    DEG_add_depends_on_transform_relation(ctx->node, "UV Project Modifier");
   }
 }
 
@@ -124,7 +124,7 @@ static Mesh *uvprojectModifier_do(UVProjectModifierData *umd,
    * (e.g. if a preceding modifier could not preserve it). */
   if (!CustomData_has_layer(&mesh->ldata, CD_MLOOPUV)) {
     CustomData_add_layer_named(
-        &mesh->ldata, CD_MLOOPUV, CD_DEFAULT, NULL, mesh->totloop, umd->uvlayer_name);
+        &mesh->ldata, CD_MLOOPUV, CD_SET_DEFAULT, NULL, mesh->totloop, umd->uvlayer_name);
   }
 
   /* make sure we're using an existing layer */
@@ -284,7 +284,7 @@ static Mesh *uvprojectModifier_do(UVProjectModifierData *umd,
     }
   }
 
-  mesh->runtime.is_original = false;
+  mesh->runtime.is_original_bmesh = false;
 
   return mesh;
 }
@@ -349,7 +349,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 ModifierTypeInfo modifierType_UVProject = {
-    /* name */ "UVProject",
+    /* name */ N_("UVProject"),
     /* structName */ "UVProjectModifierData",
     /* structSize */ sizeof(UVProjectModifierData),
     /* srna */ &RNA_UVProjectModifier,

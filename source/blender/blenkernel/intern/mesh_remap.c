@@ -312,14 +312,9 @@ void BKE_mesh_remap_calc_source_cddata_masks_from_map_modes(const int UNUSED(ver
 {
   /* vert, edge and poly mapping modes never need extra cddata from source object. */
   const bool need_lnors_src = (loop_mode & MREMAP_USE_LOOP) && (loop_mode & MREMAP_USE_NORMAL);
-  const bool need_pnors_src = need_lnors_src ||
-                              ((loop_mode & MREMAP_USE_POLY) && (loop_mode & MREMAP_USE_NORMAL));
 
   if (need_lnors_src) {
     r_cddata_mask->lmask |= CD_MASK_NORMAL;
-  }
-  if (need_pnors_src) {
-    r_cddata_mask->pmask |= CD_MASK_NORMAL;
   }
 }
 
@@ -1357,7 +1352,7 @@ void BKE_mesh_remap_calc_loops_from_mesh(const int mode,
         const bool do_loop_nors_dst = (loop_nors_dst == NULL);
         if (!loop_nors_dst) {
           loop_nors_dst = CustomData_add_layer(
-              ldata_dst, CD_NORMAL, CD_CALLOC, NULL, numloops_dst);
+              ldata_dst, CD_NORMAL, CD_SET_DEFAULT, NULL, numloops_dst);
           CustomData_set_layer_flag(ldata_dst, CD_NORMAL, CD_FLAG_TEMPORARY);
         }
         if (dirty_nors_dst || do_loop_nors_dst) {

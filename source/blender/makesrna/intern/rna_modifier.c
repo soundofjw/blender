@@ -4993,7 +4993,7 @@ static void rna_def_modifier_weightvg_mask(BlenderRNA *UNUSED(brna),
        0,
        "Object",
        "Use local generated coordinates of another object"},
-      {MOD_DISP_MAP_UV, "UV", 0, "UV", "Use coordinates from an UV layer"},
+      {MOD_DISP_MAP_UV, "UV", 0, "UV", "Use coordinates from a UV layer"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -7243,6 +7243,7 @@ void RNA_def_modifier(BlenderRNA *brna)
   RNA_def_struct_refine_func(srna, "rna_Modifier_refine");
   RNA_def_struct_path_func(srna, "rna_Modifier_path");
   RNA_def_struct_sdna(srna, "ModifierData");
+  RNA_def_struct_ui_icon(srna, ICON_MODIFIER);
 
   /* strings */
   prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);

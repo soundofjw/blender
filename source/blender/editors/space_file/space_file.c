@@ -426,7 +426,7 @@ static void file_reset_filelist_showing_main_data(ScrArea *area, SpaceFile *sfil
 static void file_listener(const wmSpaceTypeListenerParams *listener_params)
 {
   ScrArea *area = listener_params->area;
-  wmNotifier *wmn = listener_params->notifier;
+  const wmNotifier *wmn = listener_params->notifier;
   SpaceFile *sfile = (SpaceFile *)area->spacedata.first;
 
   /* context changes */
@@ -514,7 +514,7 @@ static void file_main_region_init(wmWindowManager *wm, ARegion *region)
 static void file_main_region_listener(const wmRegionListenerParams *listener_params)
 {
   ARegion *region = listener_params->region;
-  wmNotifier *wmn = listener_params->notifier;
+  const wmNotifier *wmn = listener_params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -695,6 +695,7 @@ static void file_operatortypes(void)
   WM_operatortype_append(FILE_OT_smoothscroll);
   WM_operatortype_append(FILE_OT_filepath_drop);
   WM_operatortype_append(FILE_OT_start_filter);
+  WM_operatortype_append(FILE_OT_edit_directory_path);
   WM_operatortype_append(FILE_OT_view_selected);
 }
 
@@ -819,7 +820,7 @@ static void file_execution_region_draw(const bContext *C, ARegion *region)
 static void file_ui_region_listener(const wmRegionListenerParams *listener_params)
 {
   ARegion *region = listener_params->region;
-  wmNotifier *wmn = listener_params->notifier;
+  const wmNotifier *wmn = listener_params->notifier;
 
   /* context changes */
   switch (wmn->category) {

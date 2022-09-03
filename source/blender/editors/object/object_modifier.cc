@@ -47,9 +47,11 @@
 #include "BKE_gpencil_modifier.h"
 #include "BKE_key.h"
 #include "BKE_lattice.h"
+#include "BKE_layer.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
+#include "BKE_mball.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_mapping.h"
 #include "BKE_mesh_runtime.h"
@@ -111,7 +113,7 @@ static void object_force_modifier_update_for_bind(Depsgraph *depsgraph, Object *
     BKE_lattice_modifiers_calc(depsgraph, scene_eval, ob_eval);
   }
   else if (ob->type == OB_MBALL) {
-    BKE_displist_make_mball(depsgraph, scene_eval, ob_eval);
+    BKE_mball_data_update(depsgraph, scene_eval, ob_eval);
   }
   else if (ELEM(ob->type, OB_CURVES_LEGACY, OB_SURF, OB_FONT)) {
     BKE_displist_make_curveTypes(depsgraph, scene_eval, ob_eval, false);
@@ -486,6 +488,9 @@ bool ED_object_modifier_move_to_index(ReportList *reports,
     }
   }
 
+  /* NOTE: Dependency graph only uses modifier nodes for visibility updates, and exact order of
+   * modifier nodes in the graph does not matter. */
+
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
   WM_main_add_notifier(NC_OBJECT | ND_MODIFIER, ob);
 
@@ -582,9 +587,11 @@ bool ED_object_modifier_convert_psys_to_mesh(ReportList *UNUSED(reports),
   me->totvert = verts_num;
   me->totedge = edges_num;
 
-  me->mvert = (MVert *)CustomData_add_layer(&me->vdata, CD_MVERT, CD_CALLOC, nullptr, verts_num);
-  me->medge = (MEdge *)CustomData_add_layer(&me->edata, CD_MEDGE, CD_CALLOC, nullptr, edges_num);
-  me->mface = (MFace *)CustomData_add_layer(&me->fdata, CD_MFACE, CD_CALLOC, nullptr, 0);
+  me->mvert = (MVert *)CustomData_add_layer(
+      &me->vdata, CD_MVERT, CD_SET_DEFAULT, nullptr, verts_num);
+  me->medge = (MEdge *)CustomData_add_layer(
+      &me->edata, CD_MEDGE, CD_SET_DEFAULT, nullptr, edges_num);
+  me->mface = (MFace *)CustomData_add_layer(&me->fdata, CD_MFACE, CD_SET_DEFAULT, nullptr, 0);
 
   MVert *mvert = me->mvert;
   MEdge *medge = me->medge;
@@ -757,9 +764,7 @@ static bool modifier_apply_obdata(
       BKE_mesh_nomain_to_mesh(mesh_applied, me, ob, &CD_MASK_MESH, true);
 
       /* Anonymous attributes shouldn't be available on the applied geometry. */
-      MeshComponent component;
-      component.replace(me, GeometryOwnershipType::Editable);
-      component.attributes_remove_anonymous();
+      blender::bke::mesh_attributes_for_write(*me).remove_anonymous();
 
       if (md_eval->type == eModifierType_Multires) {
         multires_customdata_delete(me);
@@ -820,7 +825,7 @@ static bool modifier_apply_obdata(
     /* Create a temporary geometry set and component. */
     GeometrySet geometry_set;
     geometry_set.get_component_for_write<CurveComponent>().replace(
-        &curves, GeometryOwnershipType::Editable);
+        &curves, GeometryOwnershipType::ReadOnly);
 
     ModifierEvalContext mectx = {depsgraph, ob, (ModifierApplyFlag)0};
     mti->modifyGeometrySet(md_eval, &mectx, &geometry_set);
@@ -828,20 +833,18 @@ static bool modifier_apply_obdata(
       BKE_report(reports, RPT_ERROR, "Evaluated geometry from modifier does not contain curves");
       return false;
     }
-    CurveComponent &component = geometry_set.get_component_for_write<CurveComponent>();
     Curves &curves_eval = *geometry_set.get_curves_for_write();
 
     /* Anonymous attributes shouldn't be available on the applied geometry. */
-    component.attributes_remove_anonymous();
+    blender::bke::CurvesGeometry::wrap(curves_eval.geometry)
+        .attributes_for_write()
+        .remove_anonymous();
 
-    /* If the modifier's output is a different curves data-block, copy the relevant information to
-     * the original. */
-    if (&curves_eval != &curves) {
-      blender::bke::CurvesGeometry::wrap(curves.geometry) = std::move(
-          blender::bke::CurvesGeometry::wrap(curves_eval.geometry));
-      Main *bmain = DEG_get_bmain(depsgraph);
-      BKE_object_material_from_eval_data(bmain, ob, &curves_eval.id);
-    }
+    /* Copy the relevant information to the original. */
+    blender::bke::CurvesGeometry::wrap(curves.geometry) = std::move(
+        blender::bke::CurvesGeometry::wrap(curves_eval.geometry));
+    Main *bmain = DEG_get_bmain(depsgraph);
+    BKE_object_material_from_eval_data(bmain, ob, &curves_eval.id);
   }
   else {
     /* TODO: implement for point clouds and volumes. */
@@ -1227,7 +1230,7 @@ static int modifier_remove_exec(bContext *C, wmOperator *op)
   /* if cloth/softbody was removed, particle mode could be cleared */
   if (mode_orig & OB_MODE_PARTICLE_EDIT) {
     if ((ob->mode & OB_MODE_PARTICLE_EDIT) == 0) {
-      if (ob == OBACT(view_layer)) {
+      if (ob == BKE_view_layer_active_object_get(view_layer)) {
         WM_event_add_notifier(C, NC_SCENE | ND_MODE | NS_MODE_OBJECT, nullptr);
       }
     }
@@ -1367,7 +1370,7 @@ static int modifier_move_to_index_exec(bContext *C, wmOperator *op)
   ModifierData *md = edit_modifier_property_get(op, ob, 0);
   int index = RNA_int_get(op->ptr, "index");
 
-  if (!ED_object_modifier_move_to_index(op->reports, ob, md, index)) {
+  if (!(md && ED_object_modifier_move_to_index(op->reports, ob, md, index))) {
     return OPERATOR_CANCELLED;
   }
 
@@ -1440,7 +1443,6 @@ static int modifier_apply_exec_ex(bContext *C, wmOperator *op, int apply_as, boo
   Scene *scene = CTX_data_scene(C);
   Object *ob = ED_object_active_context(C);
   ModifierData *md = edit_modifier_property_get(op, ob, 0);
-  const ModifierTypeInfo *mti = BKE_modifier_get_info((ModifierType)md->type);
   const bool do_report = RNA_boolean_get(op->ptr, "report");
   const bool do_single_user = RNA_boolean_get(op->ptr, "single_user");
   const bool do_merge_customdata = RNA_boolean_get(op->ptr, "merge_customdata");
@@ -1448,6 +1450,8 @@ static int modifier_apply_exec_ex(bContext *C, wmOperator *op, int apply_as, boo
   if (md == nullptr) {
     return OPERATOR_CANCELLED;
   }
+
+  const ModifierTypeInfo *mti = BKE_modifier_get_info((ModifierType)md->type);
 
   if (do_single_user && ID_REAL_USERS(ob->data) > 1) {
     ED_object_single_obdata_user(bmain, scene, ob);
@@ -1671,6 +1675,7 @@ static int modifier_copy_exec(bContext *C, wmOperator *op)
   }
 
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+  DEG_relations_tag_update(bmain);
   WM_event_add_notifier(C, NC_OBJECT | ND_MODIFIER, ob);
 
   return OPERATOR_FINISHED;
@@ -2640,7 +2645,7 @@ static Object *modifier_skin_armature_create(Depsgraph *depsgraph, Main *bmain, 
   MVert *mvert = me_eval_deform->mvert;
 
   /* add vertex weights to original mesh */
-  CustomData_add_layer(&me->vdata, CD_MDEFORMVERT, CD_CALLOC, nullptr, me->totvert);
+  CustomData_add_layer(&me->vdata, CD_MDEFORMVERT, CD_SET_DEFAULT, nullptr, me->totvert);
 
   ViewLayer *view_layer = DEG_get_input_view_layer(depsgraph);
   Object *arm_ob = BKE_object_add(bmain, view_layer, OB_ARMATURE, nullptr);
@@ -3347,6 +3352,7 @@ void OBJECT_OT_geometry_nodes_input_attribute_toggle(wmOperatorType *ot)
   ot->idname = "OBJECT_OT_geometry_nodes_input_attribute_toggle";
 
   ot->exec = geometry_nodes_input_attribute_toggle_exec;
+  ot->poll = ED_operator_object_active;
 
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_INTERNAL;
 
@@ -3364,9 +3370,8 @@ static int geometry_node_tree_copy_assign_exec(bContext *C, wmOperator *UNUSED(o
 {
   Main *bmain = CTX_data_main(C);
   Object *ob = ED_object_active_context(C);
-
   ModifierData *md = BKE_object_active_modifier(ob);
-  if (md->type != eModifierType_Nodes) {
+  if (!(md && md->type == eModifierType_Nodes)) {
     return OPERATOR_CANCELLED;
   }
 
@@ -3398,6 +3403,7 @@ void OBJECT_OT_geometry_node_tree_copy_assign(wmOperatorType *ot)
   ot->idname = "OBJECT_OT_geometry_node_tree_copy_assign";
 
   ot->exec = geometry_node_tree_copy_assign_exec;
+  ot->poll = ED_operator_object_active;
 
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }

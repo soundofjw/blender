@@ -7,6 +7,7 @@
 
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_pointcloud_types.h"
 
 #include "BKE_attribute_math.hh"
 #include "BKE_curves.hh"
@@ -43,13 +44,13 @@ static void copy_data_based_on_map(Span<T> src, MutableSpan<T> dst, Span<int> in
  * Copies the attributes with a domain in `domains` to `result_component`.
  */
 static void copy_attributes(const Map<AttributeIDRef, AttributeKind> &attributes,
-                            const GeometryComponent &in_component,
-                            GeometryComponent &result_component,
+                            const bke::AttributeAccessor src_attributes,
+                            bke::MutableAttributeAccessor dst_attributes,
                             const Span<eAttrDomain> domains)
 {
   for (Map<AttributeIDRef, AttributeKind>::Item entry : attributes.items()) {
     const AttributeIDRef attribute_id = entry.key;
-    ReadAttributeLookup attribute = in_component.attribute_try_get_for_read(attribute_id);
+    GAttributeReader attribute = src_attributes.lookup(attribute_id);
     if (!attribute) {
       continue;
     }
@@ -60,7 +61,7 @@ static void copy_attributes(const Map<AttributeIDRef, AttributeKind> &attributes
     }
     const eCustomDataType data_type = bke::cpp_type_to_custom_data_type(attribute.varray.type());
 
-    OutputAttribute result_attribute = result_component.attribute_try_get_for_output_only(
+    GSpanAttributeWriter result_attribute = dst_attributes.lookup_or_add_for_write_only_span(
         attribute_id, attribute.domain, data_type);
 
     if (!result_attribute) {
@@ -69,11 +70,11 @@ static void copy_attributes(const Map<AttributeIDRef, AttributeKind> &attributes
 
     attribute_math::convert_to_static_type(data_type, [&](auto dummy) {
       using T = decltype(dummy);
-      VArray_Span<T> span{attribute.varray.typed<T>()};
-      MutableSpan<T> out_span = result_attribute.as_span<T>();
+      VArraySpan<T> span{attribute.varray.typed<T>()};
+      MutableSpan<T> out_span = result_attribute.span.typed<T>();
       out_span.copy_from(span);
     });
-    result_attribute.save();
+    result_attribute.finish();
   }
 }
 
@@ -82,14 +83,14 @@ static void copy_attributes(const Map<AttributeIDRef, AttributeKind> &attributes
  * the mask to `result_component`.
  */
 static void copy_attributes_based_on_mask(const Map<AttributeIDRef, AttributeKind> &attributes,
-                                          const GeometryComponent &in_component,
-                                          GeometryComponent &result_component,
+                                          const bke::AttributeAccessor src_attributes,
+                                          bke::MutableAttributeAccessor dst_attributes,
                                           const eAttrDomain domain,
                                           const IndexMask mask)
 {
   for (Map<AttributeIDRef, AttributeKind>::Item entry : attributes.items()) {
     const AttributeIDRef attribute_id = entry.key;
-    ReadAttributeLookup attribute = in_component.attribute_try_get_for_read(attribute_id);
+    GAttributeReader attribute = src_attributes.lookup(attribute_id);
     if (!attribute) {
       continue;
     }
@@ -100,7 +101,7 @@ static void copy_attributes_based_on_mask(const Map<AttributeIDRef, AttributeKin
     }
     const eCustomDataType data_type = bke::cpp_type_to_custom_data_type(attribute.varray.type());
 
-    OutputAttribute result_attribute = result_component.attribute_try_get_for_output_only(
+    GSpanAttributeWriter result_attribute = dst_attributes.lookup_or_add_for_write_only_span(
         attribute_id, attribute.domain, data_type);
 
     if (!result_attribute) {
@@ -109,23 +110,23 @@ static void copy_attributes_based_on_mask(const Map<AttributeIDRef, AttributeKin
 
     attribute_math::convert_to_static_type(data_type, [&](auto dummy) {
       using T = decltype(dummy);
-      VArray_Span<T> span{attribute.varray.typed<T>()};
-      MutableSpan<T> out_span = result_attribute.as_span<T>();
+      VArraySpan<T> span{attribute.varray.typed<T>()};
+      MutableSpan<T> out_span = result_attribute.span.typed<T>();
       copy_data_based_on_mask(span, out_span, mask);
     });
-    result_attribute.save();
+    result_attribute.finish();
   }
 }
 
 static void copy_attributes_based_on_map(const Map<AttributeIDRef, AttributeKind> &attributes,
-                                         const GeometryComponent &in_component,
-                                         GeometryComponent &result_component,
+                                         const bke::AttributeAccessor src_attributes,
+                                         bke::MutableAttributeAccessor dst_attributes,
                                          const eAttrDomain domain,
                                          const Span<int> index_map)
 {
   for (Map<AttributeIDRef, AttributeKind>::Item entry : attributes.items()) {
     const AttributeIDRef attribute_id = entry.key;
-    ReadAttributeLookup attribute = in_component.attribute_try_get_for_read(attribute_id);
+    GAttributeReader attribute = src_attributes.lookup(attribute_id);
     if (!attribute) {
       continue;
     }
@@ -136,7 +137,7 @@ static void copy_attributes_based_on_map(const Map<AttributeIDRef, AttributeKind
     }
     const eCustomDataType data_type = bke::cpp_type_to_custom_data_type(attribute.varray.type());
 
-    OutputAttribute result_attribute = result_component.attribute_try_get_for_output_only(
+    GSpanAttributeWriter result_attribute = dst_attributes.lookup_or_add_for_write_only_span(
         attribute_id, attribute.domain, data_type);
 
     if (!result_attribute) {
@@ -145,17 +146,17 @@ static void copy_attributes_based_on_map(const Map<AttributeIDRef, AttributeKind
 
     attribute_math::convert_to_static_type(data_type, [&](auto dummy) {
       using T = decltype(dummy);
-      VArray_Span<T> span{attribute.varray.typed<T>()};
-      MutableSpan<T> out_span = result_attribute.as_span<T>();
+      VArraySpan<T> span{attribute.varray.typed<T>()};
+      MutableSpan<T> out_span = result_attribute.span.typed<T>();
       copy_data_based_on_map(span, out_span, index_map);
     });
-    result_attribute.save();
+    result_attribute.finish();
   }
 }
 
 static void copy_face_corner_attributes(const Map<AttributeIDRef, AttributeKind> &attributes,
-                                        const GeometryComponent &in_component,
-                                        GeometryComponent &out_component,
+                                        const bke::AttributeAccessor src_attributes,
+                                        bke::MutableAttributeAccessor dst_attributes,
                                         const int selected_loops_num,
                                         const Span<int> selected_poly_indices,
                                         const Mesh &mesh_in)
@@ -171,7 +172,7 @@ static void copy_face_corner_attributes(const Map<AttributeIDRef, AttributeKind>
     }
   }
   copy_attributes_based_on_mask(
-      attributes, in_component, out_component, ATTR_DOMAIN_CORNER, IndexMask(indices));
+      attributes, src_attributes, dst_attributes, ATTR_DOMAIN_CORNER, IndexMask(indices));
 }
 
 static void copy_masked_vertices_to_new_mesh(const Mesh &src_mesh,
@@ -316,18 +317,19 @@ static void delete_curves_selection(GeometrySet &geometry_set,
                                     const Field<bool> &selection_field,
                                     const eAttrDomain selection_domain)
 {
-  const CurveComponent &src_component = *geometry_set.get_component_for_read<CurveComponent>();
-  GeometryComponentFieldContext field_context{src_component, selection_domain};
+  const Curves &src_curves_id = *geometry_set.get_curves_for_read();
+  const bke::CurvesGeometry &src_curves = bke::CurvesGeometry::wrap(src_curves_id.geometry);
 
-  const int domain_num = src_component.attribute_domain_num(selection_domain);
-  fn::FieldEvaluator evaluator{field_context, domain_num};
+  const int domain_size = src_curves.attributes().domain_size(selection_domain);
+  bke::CurvesFieldContext field_context{src_curves, selection_domain};
+  fn::FieldEvaluator evaluator{field_context, domain_size};
   evaluator.set_selection(selection_field);
   evaluator.evaluate();
   const IndexMask selection = evaluator.get_evaluated_selection_as_mask();
   if (selection.is_empty()) {
     return;
   }
-  if (selection.size() == domain_num) {
+  if (selection.size() == domain_size) {
     geometry_set.remove<CurveComponent>();
     return;
   }
@@ -347,11 +349,10 @@ static void delete_curves_selection(GeometrySet &geometry_set,
 static void separate_point_cloud_selection(GeometrySet &geometry_set,
                                            const Field<bool> &selection_field)
 {
-  const PointCloudComponent &src_points =
-      *geometry_set.get_component_for_read<PointCloudComponent>();
-  GeometryComponentFieldContext field_context{src_points, ATTR_DOMAIN_POINT};
+  const PointCloud &src_pointcloud = *geometry_set.get_pointcloud_for_read();
 
-  fn::FieldEvaluator evaluator{field_context, src_points.attribute_domain_num(ATTR_DOMAIN_POINT)};
+  bke::PointCloudFieldContext field_context{src_pointcloud};
+  fn::FieldEvaluator evaluator{field_context, src_pointcloud.totpoint};
   evaluator.set_selection(selection_field);
   evaluator.evaluate();
   const IndexMask selection = evaluator.get_evaluated_selection_as_mask();
@@ -362,14 +363,15 @@ static void separate_point_cloud_selection(GeometrySet &geometry_set,
 
   PointCloud *pointcloud = BKE_pointcloud_new_nomain(selection.size());
 
-  PointCloudComponent dst_points;
-  dst_points.replace(pointcloud, GeometryOwnershipType::Editable);
-
   Map<AttributeIDRef, AttributeKind> attributes;
   geometry_set.gather_attributes_for_propagation(
       {GEO_COMPONENT_TYPE_POINT_CLOUD}, GEO_COMPONENT_TYPE_POINT_CLOUD, false, attributes);
 
-  copy_attributes_based_on_mask(attributes, src_points, dst_points, ATTR_DOMAIN_POINT, selection);
+  copy_attributes_based_on_mask(attributes,
+                                bke::pointcloud_attributes(src_pointcloud),
+                                bke::pointcloud_attributes_for_write(*pointcloud),
+                                ATTR_DOMAIN_POINT,
+                                selection);
   geometry_set.replace_pointcloud(pointcloud);
 }
 
@@ -377,10 +379,9 @@ static void delete_selected_instances(GeometrySet &geometry_set,
                                       const Field<bool> &selection_field)
 {
   InstancesComponent &instances = geometry_set.get_component_for_write<InstancesComponent>();
-  GeometryComponentFieldContext field_context{instances, ATTR_DOMAIN_INSTANCE};
+  bke::GeometryFieldContext field_context{instances, ATTR_DOMAIN_INSTANCE};
 
-  fn::FieldEvaluator evaluator{field_context,
-                               instances.attribute_domain_num(ATTR_DOMAIN_INSTANCE)};
+  fn::FieldEvaluator evaluator{field_context, instances.instances_num()};
   evaluator.set_selection(selection_field);
   evaluator.evaluate();
   const IndexMask selection = evaluator.get_evaluated_selection_as_mask();
@@ -815,7 +816,7 @@ static void compute_selected_mesh_data_from_poly_selection(const Mesh &mesh,
  * Keep the parts of the mesh that are in the selection.
  */
 static void do_mesh_separation(GeometrySet &geometry_set,
-                               const MeshComponent &in_component,
+                               const Mesh &mesh_in,
                                const Span<bool> selection,
                                const eAttrDomain domain,
                                const GeometryNodeDeleteGeometryMode mode)
@@ -826,9 +827,7 @@ static void do_mesh_separation(GeometrySet &geometry_set,
   int selected_polys_num = 0;
   int selected_loops_num = 0;
 
-  const Mesh &mesh_in = *in_component.get_for_read();
   Mesh *mesh_out;
-  MeshComponent out_component;
 
   Map<AttributeIDRef, AttributeKind> attributes;
   geometry_set.gather_attributes_for_propagation(
@@ -890,7 +889,6 @@ static void do_mesh_separation(GeometrySet &geometry_set,
                                                    0,
                                                    selected_loops_num,
                                                    selected_polys_num);
-      out_component.replace(mesh_out, GeometryOwnershipType::Editable);
 
       /* Copy the selected parts of the mesh over to the new mesh. */
       copy_masked_vertices_to_new_mesh(mesh_in, *mesh_out, vertex_map);
@@ -899,18 +897,24 @@ static void do_mesh_separation(GeometrySet &geometry_set,
           mesh_in, *mesh_out, vertex_map, edge_map, selected_poly_indices, new_loop_starts);
 
       /* Copy attributes. */
-      copy_attributes_based_on_map(
-          attributes, in_component, out_component, ATTR_DOMAIN_POINT, vertex_map);
-      copy_attributes_based_on_map(
-          attributes, in_component, out_component, ATTR_DOMAIN_EDGE, edge_map);
+      copy_attributes_based_on_map(attributes,
+                                   bke::mesh_attributes(mesh_in),
+                                   bke::mesh_attributes_for_write(*mesh_out),
+                                   ATTR_DOMAIN_POINT,
+                                   vertex_map);
+      copy_attributes_based_on_map(attributes,
+                                   bke::mesh_attributes(mesh_in),
+                                   bke::mesh_attributes_for_write(*mesh_out),
+                                   ATTR_DOMAIN_EDGE,
+                                   edge_map);
       copy_attributes_based_on_mask(attributes,
-                                    in_component,
-                                    out_component,
+                                    bke::mesh_attributes(mesh_in),
+                                    bke::mesh_attributes_for_write(*mesh_out),
                                     ATTR_DOMAIN_FACE,
                                     IndexMask(Vector<int64_t>(selected_poly_indices.as_span())));
       copy_face_corner_attributes(attributes,
-                                  in_component,
-                                  out_component,
+                                  bke::mesh_attributes(mesh_in),
+                                  bke::mesh_attributes_for_write(*mesh_out),
                                   selected_loops_num,
                                   selected_poly_indices,
                                   mesh_in);
@@ -962,7 +966,6 @@ static void do_mesh_separation(GeometrySet &geometry_set,
                                                    0,
                                                    selected_loops_num,
                                                    selected_polys_num);
-      out_component.replace(mesh_out, GeometryOwnershipType::Editable);
 
       /* Copy the selected parts of the mesh over to the new mesh. */
       memcpy(mesh_out->mvert, mesh_in.mvert, mesh_in.totvert * sizeof(MVert));
@@ -971,17 +974,23 @@ static void do_mesh_separation(GeometrySet &geometry_set,
           mesh_in, *mesh_out, edge_map, selected_poly_indices, new_loop_starts);
 
       /* Copy attributes. */
-      copy_attributes(attributes, in_component, out_component, {ATTR_DOMAIN_POINT});
-      copy_attributes_based_on_map(
-          attributes, in_component, out_component, ATTR_DOMAIN_EDGE, edge_map);
+      copy_attributes(attributes,
+                      bke::mesh_attributes(mesh_in),
+                      bke::mesh_attributes_for_write(*mesh_out),
+                      {ATTR_DOMAIN_POINT});
+      copy_attributes_based_on_map(attributes,
+                                   bke::mesh_attributes(mesh_in),
+                                   bke::mesh_attributes_for_write(*mesh_out),
+                                   ATTR_DOMAIN_EDGE,
+                                   edge_map);
       copy_attributes_based_on_mask(attributes,
-                                    in_component,
-                                    out_component,
+                                    bke::mesh_attributes(mesh_in),
+                                    bke::mesh_attributes_for_write(*mesh_out),
                                     ATTR_DOMAIN_FACE,
                                     IndexMask(Vector<int64_t>(selected_poly_indices.as_span())));
       copy_face_corner_attributes(attributes,
-                                  in_component,
-                                  out_component,
+                                  bke::mesh_attributes(mesh_in),
+                                  bke::mesh_attributes_for_write(*mesh_out),
                                   selected_loops_num,
                                   selected_poly_indices,
                                   mesh_in);
@@ -1020,7 +1029,6 @@ static void do_mesh_separation(GeometrySet &geometry_set,
       }
       mesh_out = BKE_mesh_new_nomain_from_template(
           &mesh_in, mesh_in.totvert, mesh_in.totedge, 0, selected_loops_num, selected_polys_num);
-      out_component.replace(mesh_out, GeometryOwnershipType::Editable);
 
       /* Copy the selected parts of the mesh over to the new mesh. */
       memcpy(mesh_out->mvert, mesh_in.mvert, mesh_in.totvert * sizeof(MVert));
@@ -1028,16 +1036,18 @@ static void do_mesh_separation(GeometrySet &geometry_set,
       copy_masked_polys_to_new_mesh(mesh_in, *mesh_out, selected_poly_indices, new_loop_starts);
 
       /* Copy attributes. */
-      copy_attributes(
-          attributes, in_component, out_component, {ATTR_DOMAIN_POINT, ATTR_DOMAIN_EDGE});
+      copy_attributes(attributes,
+                      bke::mesh_attributes(mesh_in),
+                      bke::mesh_attributes_for_write(*mesh_out),
+                      {ATTR_DOMAIN_POINT, ATTR_DOMAIN_EDGE});
       copy_attributes_based_on_mask(attributes,
-                                    in_component,
-                                    out_component,
+                                    bke::mesh_attributes(mesh_in),
+                                    bke::mesh_attributes_for_write(*mesh_out),
                                     ATTR_DOMAIN_FACE,
                                     IndexMask(Vector<int64_t>(selected_poly_indices.as_span())));
       copy_face_corner_attributes(attributes,
-                                  in_component,
-                                  out_component,
+                                  bke::mesh_attributes(mesh_in),
+                                  bke::mesh_attributes_for_write(*mesh_out),
                                   selected_loops_num,
                                   selected_poly_indices,
                                   mesh_in);
@@ -1054,22 +1064,21 @@ static void separate_mesh_selection(GeometrySet &geometry_set,
                                     const eAttrDomain selection_domain,
                                     const GeometryNodeDeleteGeometryMode mode)
 {
-  const MeshComponent &src_component = *geometry_set.get_component_for_read<MeshComponent>();
-  GeometryComponentFieldContext field_context{src_component, selection_domain};
-
+  const Mesh &src_mesh = *geometry_set.get_mesh_for_read();
+  bke::MeshFieldContext field_context{src_mesh, selection_domain};
   fn::FieldEvaluator evaluator{field_context,
-                               src_component.attribute_domain_num(selection_domain)};
+                               bke::mesh_attributes(src_mesh).domain_size(selection_domain)};
   evaluator.add(selection_field);
   evaluator.evaluate();
   const VArray<bool> selection = evaluator.get_evaluated<bool>(0);
   /* Check if there is anything to delete. */
-  if (selection.is_single() && selection.get_internal_single()) {
+  if (selection.is_empty() || (selection.is_single() && selection.get_internal_single())) {
     return;
   }
 
-  const VArray_Span<bool> selection_span{selection};
+  const VArraySpan<bool> selection_span{selection};
 
-  do_mesh_separation(geometry_set, src_component, selection_span, selection_domain, mode);
+  do_mesh_separation(geometry_set, src_mesh, selection_span, selection_domain, mode);
 }
 
 }  // namespace blender::nodes::node_geo_delete_geometry_cc

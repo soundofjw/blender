@@ -1355,12 +1355,18 @@ static void knife_bvh_raycast_cb(void *userdata,
 #endif
 
   if (isect && dist < hit->dist) {
+    madd_v3_v3v3fl(hit->co, ray->origin, ray->direction, dist);
+
+    /* Discard clipped points. */
+    if (RV3D_CLIPPING_ENABLED(kcd->vc.v3d, kcd->vc.rv3d) &&
+        ED_view3d_clipping_test(kcd->vc.rv3d, hit->co, false)) {
+      return;
+    }
+
     hit->dist = dist;
     hit->index = index;
 
     copy_v3_v3(hit->no, ltri[0]->f->no);
-
-    madd_v3_v3v3fl(hit->co, ray->origin, ray->direction, dist);
 
     kcd->bvh.looptris = em->looptris;
     copy_v2_v2(kcd->bvh.uv, uv);
@@ -4294,7 +4300,7 @@ static void knifetool_finish_single_pre(KnifeTool_OpData *kcd, Object *ob)
 }
 
 /**
- * A post version is needed to to delay recalculating tessellation after making cuts.
+ * A post version is needed to delay recalculating tessellation after making cuts.
  * Without this, knife-project can't use the BVH tree to select geometry after a cut, see: T98349.
  */
 static void knifetool_finish_single_post(KnifeTool_OpData *UNUSED(kcd), Object *ob)

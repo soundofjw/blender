@@ -81,6 +81,7 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
+#include "RNA_path.h"
 #include "RNA_prototypes.h"
 
 #include "UI_interface.h"
@@ -939,7 +940,7 @@ int WM_generic_select_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
     return ret_value | OPERATOR_PASS_THROUGH;
   }
-  if (ELEM(event->type, MOUSEMOVE, INBETWEEN_MOUSEMOVE)) {
+  if (ISMOUSE_MOTION(event->type)) {
     const int drag_delta[2] = {
         mval[0] - event->mval[0],
         mval[1] - event->mval[1],
@@ -1306,6 +1307,10 @@ ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short i
     }
 
     return id;
+  }
+
+  if (!WM_operator_properties_id_lookup_is_set(op->ptr)) {
+    return NULL;
   }
 
   /* Lookup an already existing ID. */
@@ -2068,7 +2073,7 @@ static void WM_OT_quit_blender(wmOperatorType *ot)
 
 static int wm_console_toggle_exec(bContext *UNUSED(C), wmOperator *UNUSED(op))
 {
-  setConsoleWindowState(GHOST_kConsoleWindowStateToggle);
+  GHOST_setConsoleWindowState(GHOST_kConsoleWindowStateToggle);
   return OPERATOR_FINISHED;
 }
 

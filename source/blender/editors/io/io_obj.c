@@ -100,6 +100,7 @@ static int wm_obj_export_exec(bContext *C, wmOperator *op)
   export_params.export_selected_objects = RNA_boolean_get(op->ptr, "export_selected_objects");
   export_params.export_uv = RNA_boolean_get(op->ptr, "export_uv");
   export_params.export_normals = RNA_boolean_get(op->ptr, "export_normals");
+  export_params.export_colors = RNA_boolean_get(op->ptr, "export_colors");
   export_params.export_materials = RNA_boolean_get(op->ptr, "export_materials");
   export_params.path_mode = RNA_enum_get(op->ptr, "path_mode");
   export_params.export_triangulated_mesh = RNA_boolean_get(op->ptr, "export_triangulated_mesh");
@@ -160,6 +161,7 @@ static void ui_obj_export_settings(uiLayout *layout, PointerRNA *imfptr)
   sub = uiLayoutColumnWithHeading(col, false, IFACE_("Export"));
   uiItemR(sub, imfptr, "export_uv", 0, IFACE_("UV Coordinates"), ICON_NONE);
   uiItemR(sub, imfptr, "export_normals", 0, IFACE_("Normals"), ICON_NONE);
+  uiItemR(sub, imfptr, "export_colors", 0, IFACE_("Colors"), ICON_NONE);
   uiItemR(sub, imfptr, "export_materials", 0, IFACE_("Materials"), ICON_NONE);
   uiItemR(sub, imfptr, "export_triangulated_mesh", 0, IFACE_("Triangulated Mesh"), ICON_NONE);
   uiItemR(sub, imfptr, "export_curves_as_nurbs", 0, IFACE_("Curves as NURBS"), ICON_NONE);
@@ -206,11 +208,11 @@ static bool wm_obj_export_check(bContext *C, wmOperator *op)
     int end = RNA_int_get(op->ptr, "end_frame");
     /* Set the defaults. */
     if (start == INT_MIN) {
-      start = SFRA;
+      start = scene->r.sfra;
       changed = true;
     }
     if (end == INT_MAX) {
-      end = EFRA;
+      end = scene->r.efra;
       changed = true;
     }
     /* Fix user errors. */
@@ -264,7 +266,7 @@ void WM_OT_obj_export(struct wmOperatorType *ot)
                   "Export multiple frames instead of the current frame only");
   RNA_def_int(ot->srna,
               "start_frame",
-              INT_MIN, /* wm_obj_export_check uses this to set SFRA. */
+              INT_MIN, /* wm_obj_export_check uses this to set scene->r.sfra. */
               INT_MIN,
               INT_MAX,
               "Start Frame",
@@ -273,7 +275,7 @@ void WM_OT_obj_export(struct wmOperatorType *ot)
               INT_MAX);
   RNA_def_int(ot->srna,
               "end_frame",
-              INT_MAX, /* wm_obj_export_check uses this to set EFRA. */
+              INT_MAX, /* wm_obj_export_check uses this to set scene->r.efra. */
               INT_MIN,
               INT_MAX,
               "End Frame",
@@ -315,6 +317,7 @@ void WM_OT_obj_export(struct wmOperatorType *ot)
                   "Export Normals",
                   "Export per-face normals if the face is flat-shaded, per-face-per-loop "
                   "normals if smooth-shaded");
+  RNA_def_boolean(ot->srna, "export_colors", false, "Export Colors", "Export per-vertex colors");
   RNA_def_boolean(ot->srna,
                   "export_materials",
                   true,
@@ -379,19 +382,43 @@ static int wm_obj_import_invoke(bContext *C, wmOperator *op, const wmEvent *UNUS
 
 static int wm_obj_import_exec(bContext *C, wmOperator *op)
 {
-  if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
-    BKE_report(op->reports, RPT_ERROR, "No filename given");
-    return OPERATOR_CANCELLED;
-  }
-
   struct OBJImportParams import_params;
   RNA_string_get(op->ptr, "filepath", import_params.filepath);
   import_params.clamp_size = RNA_float_get(op->ptr, "clamp_size");
   import_params.forward_axis = RNA_enum_get(op->ptr, "forward_axis");
   import_params.up_axis = RNA_enum_get(op->ptr, "up_axis");
+  import_params.import_vertex_groups = RNA_boolean_get(op->ptr, "import_vertex_groups");
   import_params.validate_meshes = RNA_boolean_get(op->ptr, "validate_meshes");
+  import_params.relative_paths = ((U.flag & USER_RELPATHS) != 0);
+  import_params.clear_selection = true;
 
-  OBJ_import(C, &import_params);
+  int files_len = RNA_collection_length(op->ptr, "files");
+  if (files_len) {
+    /* Importing multiple files: loop over them and import one by one. */
+    PointerRNA fileptr;
+    PropertyRNA *prop;
+    char dir_only[FILE_MAX], file_only[FILE_MAX];
+
+    RNA_string_get(op->ptr, "directory", dir_only);
+    prop = RNA_struct_find_property(op->ptr, "files");
+    for (int i = 0; i < files_len; i++) {
+      RNA_property_collection_lookup_int(op->ptr, prop, i, &fileptr);
+      RNA_string_get(&fileptr, "name", file_only);
+      BLI_join_dirfile(
+          import_params.filepath, sizeof(import_params.filepath), dir_only, file_only);
+      import_params.clear_selection = (i == 0);
+      OBJ_import(C, &import_params);
+    }
+  }
+  else if (RNA_struct_property_is_set(op->ptr, "filepath")) {
+    /* Importing one file. */
+    RNA_string_get(op->ptr, "filepath", import_params.filepath);
+    OBJ_import(C, &import_params);
+  }
+  else {
+    BKE_report(op->reports, RPT_ERROR, "No filename given");
+    return OPERATOR_CANCELLED;
+  }
 
   Scene *scene = CTX_data_scene(C);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
@@ -419,6 +446,7 @@ static void ui_obj_import_settings(uiLayout *layout, PointerRNA *imfptr)
   box = uiLayoutBox(layout);
   uiItemL(box, IFACE_("Options"), ICON_EXPORT);
   col = uiLayoutColumn(box, false);
+  uiItemR(col, imfptr, "import_vertex_groups", 0, NULL, ICON_NONE);
   uiItemR(col, imfptr, "validate_meshes", 0, NULL, ICON_NONE);
 }
 
@@ -448,7 +476,8 @@ void WM_OT_obj_import(struct wmOperatorType *ot)
                                  FILE_TYPE_FOLDER,
                                  FILE_BLENDER,
                                  FILE_OPENFILE,
-                                 WM_FILESEL_FILEPATH | WM_FILESEL_SHOW_PROPS,
+                                 WM_FILESEL_FILEPATH | WM_FILESEL_SHOW_PROPS |
+                                     WM_FILESEL_DIRECTORY | WM_FILESEL_FILES,
                                  FILE_DEFAULTDISPLAY,
                                  FILE_SORT_ALPHA);
   RNA_def_float(
@@ -464,6 +493,11 @@ void WM_OT_obj_import(struct wmOperatorType *ot)
   RNA_def_enum(
       ot->srna, "forward_axis", io_transform_axis, IO_AXIS_NEGATIVE_Z, "Forward Axis", "");
   RNA_def_enum(ot->srna, "up_axis", io_transform_axis, IO_AXIS_Y, "Up Axis", "");
+  RNA_def_boolean(ot->srna,
+                  "import_vertex_groups",
+                  false,
+                  "Vertex Groups",
+                  "Import OBJ groups as vertex groups");
   RNA_def_boolean(ot->srna,
                   "validate_meshes",
                   false,

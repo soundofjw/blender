@@ -1888,7 +1888,7 @@ static void skin_set_orig_indices(Mesh *mesh)
   int *orig, totpoly;
 
   totpoly = mesh->totpoly;
-  orig = CustomData_add_layer(&mesh->pdata, CD_ORIGINDEX, CD_CALLOC, NULL, totpoly);
+  orig = CustomData_add_layer(&mesh->pdata, CD_ORIGINDEX, CD_CONSTRUCT, NULL, totpoly);
   copy_vn_i(orig, totpoly, ORIGINDEX_NONE);
 }
 
@@ -2069,7 +2069,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 ModifierTypeInfo modifierType_Skin = {
-    /* name */ "Skin",
+    /* name */ N_("Skin"),
     /* structName */ "SkinModifierData",
     /* structSize */ sizeof(SkinModifierData),
     /* srna */ &RNA_SkinModifier,

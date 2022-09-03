@@ -20,6 +20,7 @@
 #include "ED_space_api.h"
 
 #include "RNA_access.h"
+#include "RNA_path.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -256,7 +257,7 @@ static void console_main_region_listener(const wmRegionListenerParams *params)
 {
   ScrArea *area = params->area;
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {

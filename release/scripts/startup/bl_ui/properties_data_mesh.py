@@ -3,6 +3,8 @@ import bpy
 from bpy.types import Menu, Panel, UIList
 from rna_prop_ui import PropertyPanel
 
+from bpy.app.translations import pgettext_tip as tip_
+
 
 class MESH_MT_vertex_group_context_menu(Menu):
     bl_label = "Vertex Group Specials"
@@ -58,7 +60,12 @@ class MESH_MT_shape_key_context_menu(Menu):
         layout.operator("object.join_shapes")
         layout.operator("object.shape_key_transfer")
         layout.separator()
-        layout.operator("object.shape_key_remove", icon='X', text="Delete All Shape Keys").all = True
+        op = layout.operator("object.shape_key_remove", icon='X', text="Delete All Shape Keys")
+        op.all = True
+        op.apply_mix = False
+        op = layout.operator("object.shape_key_remove", text="Apply All Shape Keys")
+        op.all = True
+        op.apply_mix = True
         layout.separator()
         layout.operator("object.shape_key_move", icon='TRIA_UP_BAR', text="Move to Top").type = 'TOP'
         layout.operator("object.shape_key_move", icon='TRIA_DOWN_BAR', text="Move to Bottom").type = 'BOTTOM'
@@ -70,7 +77,7 @@ class MESH_MT_color_attribute_context_menu(Menu):
     def draw(self, _context):
         layout = self.layout
 
-        props = layout.operator(
+        layout.operator(
             "geometry.color_attribute_duplicate",
             icon='DUPLICATE',
         )
@@ -411,6 +418,8 @@ class DATA_PT_shape_keys(MeshButtonsPanel, Panel):
                 row.active = enable_edit_value
                 row.prop(key, "eval_time")
 
+        layout.prop(ob, "add_rest_position_attribute")
+
 
 class DATA_PT_uv_texture(MeshButtonsPanel, Panel):
     bl_label = "UV Maps"
@@ -507,12 +516,12 @@ class MESH_UL_attributes(UIList):
         'CORNER': "Face Corner",
     }
 
-    def filter_items(self, context, data, property):
+    def filter_items(self, _context, data, property):
         attributes = getattr(data, property)
         flags = []
         indices = [i for i in range(len(attributes))]
 
-        for index, item in enumerate(attributes):
+        for item in attributes:
             flags.append(self.bitflag_filter_item if item.is_internal else 0)
 
         return flags, indices
@@ -571,7 +580,7 @@ class DATA_PT_mesh_attributes(MeshButtonsPanel, Panel):
         colliding_names = []
         for collection in (
                 # Built-in names.
-                {"position": None, "material_index": None, "shade_smooth": None, "normal": None, "crease": None},
+                {"position": None, "shade_smooth": None, "normal": None, "crease": None},
                 mesh.attributes,
                 mesh.uv_layers,
                 ob.vertex_groups,
@@ -585,7 +594,7 @@ class DATA_PT_mesh_attributes(MeshButtonsPanel, Panel):
         if not colliding_names:
             return
 
-        layout.label(text="Name collisions: " + ", ".join(set(colliding_names)), icon='ERROR')
+        layout.label(text=tip_("Name collisions: ") + ", ".join(set(colliding_names)), icon='ERROR')
 
 
 class ColorAttributesListBase():
@@ -596,7 +605,7 @@ class ColorAttributesListBase():
         'CORNER': "Face Corner",
     }
 
-    def filter_items(self, context, data, property):
+    def filter_items(self, _context, data, property):
         attrs = getattr(data, property)
         ret = []
         idxs = []

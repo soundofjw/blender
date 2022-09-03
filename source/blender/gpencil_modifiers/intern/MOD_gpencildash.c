@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "BLI_listbase.h"
-#include "BLI_math.h"
+#include "BLI_math_vector.h"
 #include "BLI_string.h"
 
 #include "DNA_defaults.h"
@@ -270,7 +270,7 @@ static void foreachIDLink(GpencilModifierData *md, Object *ob, IDWalkFunc walk, 
 }
 
 static void segment_list_item(struct uiList *UNUSED(ui_list),
-                              struct bContext *UNUSED(C),
+                              const struct bContext *UNUSED(C),
                               struct uiLayout *layout,
                               struct PointerRNA *UNUSED(idataptr),
                               struct PointerRNA *itemptr,
@@ -363,7 +363,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 GpencilModifierTypeInfo modifierType_Gpencil_Dash = {
-    /* name */ "Dot Dash",
+    /* name */ N_("Dot Dash"),
     /* structName */ "DashGpencilModifierData",
     /* structSize */ sizeof(DashGpencilModifierData),
     /* type */ eGpencilModifierTypeType_Gpencil,

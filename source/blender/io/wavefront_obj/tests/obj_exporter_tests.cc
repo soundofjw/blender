@@ -60,7 +60,7 @@ TEST_F(obj_exporter_test, filter_objects_curves_as_mesh)
     return;
   }
   auto [objmeshes, objcurves]{filter_supported_objects(depsgraph, _export.params)};
-  EXPECT_EQ(objmeshes.size(), 20);
+  EXPECT_EQ(objmeshes.size(), 21);
   EXPECT_EQ(objcurves.size(), 0);
 }
 
@@ -185,17 +185,17 @@ TEST(obj_exporter_writer, mtllib)
 TEST(obj_exporter_writer, format_handler_buffer_chunking)
 {
   /* Use a tiny buffer chunk size, so that the test below ends up creating several blocks. */
-  FormatHandler<eFileType::OBJ, 16> h;
-  h.write<eOBJSyntaxElement::object_name>("abc");
-  h.write<eOBJSyntaxElement::object_name>("abcd");
-  h.write<eOBJSyntaxElement::object_name>("abcde");
-  h.write<eOBJSyntaxElement::object_name>("abcdef");
-  h.write<eOBJSyntaxElement::object_name>("012345678901234567890123456789abcd");
-  h.write<eOBJSyntaxElement::object_name>("123");
-  h.write<eOBJSyntaxElement::curve_element_begin>();
-  h.write<eOBJSyntaxElement::new_line>();
-  h.write<eOBJSyntaxElement::nurbs_parameter_begin>();
-  h.write<eOBJSyntaxElement::new_line>();
+  FormatHandler h(16);
+  h.write_obj_object("abc");
+  h.write_obj_object("abcd");
+  h.write_obj_object("abcde");
+  h.write_obj_object("abcdef");
+  h.write_obj_object("012345678901234567890123456789abcd");
+  h.write_obj_object("123");
+  h.write_obj_curve_begin();
+  h.write_obj_newline();
+  h.write_obj_nurbs_parm_begin();
+  h.write_obj_newline();
 
   size_t got_blocks = h.get_block_count();
   ASSERT_EQ(got_blocks, 7);
@@ -436,6 +436,19 @@ TEST_F(obj_exporter_regression_test, cubes_positioned)
                                _export.params);
 }
 
+TEST_F(obj_exporter_regression_test, cubes_vertex_colors)
+{
+  OBJExportParamsDefault _export;
+  _export.params.export_colors = true;
+  _export.params.export_normals = false;
+  _export.params.export_uv = false;
+  _export.params.export_materials = false;
+  compare_obj_export_to_golden("io_tests/blend_geometry/cubes_vertex_colors.blend",
+                               "io_tests/obj/cubes_vertex_colors.obj",
+                               "",
+                               _export.params);
+}
+
 TEST_F(obj_exporter_regression_test, cubes_with_textures_strip)
 {
   OBJExportParamsDefault _export;
@@ -494,6 +507,7 @@ TEST_F(obj_exporter_regression_test, all_objects)
   _export.params.forward_axis = IO_AXIS_Y;
   _export.params.up_axis = IO_AXIS_Z;
   _export.params.export_smooth_groups = true;
+  _export.params.export_colors = true;
   compare_obj_export_to_golden("io_tests/blend_scene/all_objects.blend",
                                "io_tests/obj/all_objects.obj",
                                "io_tests/obj/all_objects.mtl",
