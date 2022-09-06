@@ -934,11 +934,20 @@ static void create_layer_for_domain(const CDStreamConfig &config,
       if (!geometry_component.attributes_for_write()->remove(attribute_id)) {
         return;
       }
+      std::cerr << "joshw: failed to remove attribute: " << name << "\n";
+      // in this instance, a re-import of the abc data is suggested.
+      // this happens when a file was imported in an old version, and an attribute
+      // was imported in a way that is unexpected. (e.g. Cd imported on a face-corner previously for
+      // what is currently a point cloud.)
+      return;
     }
+
+    std::cerr << "joshw: lookup_or_add_for_write_only_span: " << name << "?\n";
 
     bke::SpanAttributeWriter<BlenderType> write_attribute =
         geometry_component.attributes_for_write()->lookup_or_add_for_write_only_span<BlenderType>(
             attribute_id, target_domain);
+    std::cerr << "joshw: write_attribute: " << write_attribute << "\n";
     /* We just created the attribute, it should exist. */
     BLI_assert(write_attribute);
 

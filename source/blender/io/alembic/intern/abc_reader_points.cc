@@ -101,7 +101,15 @@ static void read_points_interp(const P3fArraySamplePtr positions,
 
 static void read_points(const P3fArraySamplePtr positions, MutableSpan<float3> r_points)
 {
-  for (size_t i = 0; i < positions->size(); i++) {
+  int64_t total_points = positions->size();
+
+  std::cerr << "joshw: positions->size: " << positions->size() << " r_points.size: " << r_points.size() << "\n";
+  if (r_points.size() < total_points) {
+    total_points = r_points.size();
+    std::cerr << "Alembic warning: writable positions (r_points) is smaller than source point positions.\n";
+
+  }
+  for (size_t i = 0; i < total_points; i++) {
     copy_zup_from_yup(r_points[i], (*positions)[i].getValue());
   }
 }
@@ -171,6 +179,11 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
   IPointsSchema::Sample sample;
   try {
     sample = m_schema.getValue(sample_sel);
+
+    printf("Alembic: reading points sample for '%s/%s' at time %f.\n",
+           m_iobject.getFullName().c_str(),
+           m_schema.getName().c_str(),
+           sample_sel.getRequestedTime());
   }
   catch (Alembic::Util::Exception &ex) {
     *err_str = "Error reading points sample; more detail on the console";
@@ -186,7 +199,6 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
   PointCloud *existing_point_cloud = geometry_set.get_pointcloud_for_write();
   PointCloud *point_cloud = existing_point_cloud;
 
-
   const P3fArraySamplePtr &positions = sample.getPositions();
 
   const IFloatGeomParam widths_param = m_schema.getWidthsParam();
@@ -197,8 +209,21 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
     radii = wsample.getVals();
   }
 
+  /* joshw: removed this. for some reason the existing point_cloud always has 2 points (?)
+     - and in the case when we have 2 points on the new data, the positions span was
+       appearing with a size of 0.
+  std::cerr << "joshw: previous totpoint: " << point_cloud->totpoint << "\n";
   if (point_cloud->totpoint != positions->size()) {
+    std::cerr << "joshw: new pointcloud of size " << positions->size() << "\n";
     point_cloud = BKE_pointcloud_new_nomain(positions->size());
+  }
+  */
+  point_cloud = BKE_pointcloud_new_nomain(positions->size());
+
+  if (point_cloud->totpoint == 0) {
+    std::cerr << "big problem, 0 points.\n";
+    *err_str = "Error reading points sample; more detail on the console";
+    return;
   }
 
   CDStreamConfig config;
@@ -212,17 +237,34 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
       config.geometry_component.get());
   component->replace(point_cloud, GeometryOwnershipType::Editable);
 
-  std::optional<bke::MutableAttributeAccessor> point_attributes =
-      component->attributes_for_write();
+  //std::optional<bke::MutableAttributeAccessor> point_attributes =
+  //    component->attributes_for_write();
 
-  void *pointsdata = add_customdata_pd(point_cloud, "position", CD_MVERT);
+  bke::MutableAttributeAccessor point_attributes = bke::pointcloud_attributes_for_write(*point_cloud);
+
+  /*void *pointsdata = add_customdata_pd(point_cloud, "position", CD_MVERT);
   float3 *layer_data = static_cast<float3 *>(pointsdata);
-  MutableSpan<float3> pointSpan = MutableSpan(layer_data, point_cloud->totpoint);
-  read_points_sample(m_schema, sample_sel, config, pointSpan);
+  MutableSpan<float3> point_position_span = MutableSpan(layer_data, point_cloud->totpoint);*/
+  std::cerr << "joshw: huh?\n";
 
+  std::cerr << "joshw: totpoint: " << point_cloud->totpoint << "\n";
+  std::cerr << "joshw: positions->size: " << positions->size() << "\n";
+
+  // joshw, bug, this is a size 0 domain for some reason?
+  bke::SpanAttributeWriter<float3> point_position =
+      point_attributes.lookup_or_add_for_write_only_span<float3>(POINTCLOUD_ATTR_POSITION, ATTR_DOMAIN_POINT);
+  MutableSpan<float3> point_position_span = point_position.span;
+
+  std::cerr << "joshw: point position span size: " << point_position_span.size() << "\n";
+  if (point_position_span.size() != positions->size()) {
+    add_customdata_pd(point_cloud, "position", CD_PROP_FLOAT3);
+  }
+
+  std::cerr << "joshw: read_points_sample\n";
+  read_points_sample(m_schema, sample_sel, config, point_position_span);
 
   bke::SpanAttributeWriter<float> point_radii =
-      point_attributes->lookup_or_add_for_write_span<float>("radius", ATTR_DOMAIN_POINT);
+      point_attributes.lookup_or_add_for_write_only_span<float>(POINTCLOUD_ATTR_RADIUS, ATTR_DOMAIN_POINT);
   MutableSpan<float> point_radii_span = point_radii.span;
 
   if (radii) {
@@ -233,7 +275,9 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
   else {
     point_radii_span.fill(0.01f);
   }
+
   point_radii.finish();
+  point_position.finish();
 
   read_arbitrary_attributes(config, m_schema, {}, sample_sel, velocity_scale);
 
