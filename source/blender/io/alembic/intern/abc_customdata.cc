@@ -806,23 +806,20 @@ static void iterate_attribute_loop_domain(const CDStreamConfig &config,
     return;
   }
 
-  Mesh *mesh = config.mesh;
-  if (mesh == nullptr) {
-    std::cerr << "Mesh is missing during Alembic import.\n";
-  }
-  MPoly *mpolys = mesh->mpoly;
-  MLoop *mloops = mesh->mloop;
+  MPoly *mpolys = config.mpoly;
+  MLoop *mloops = config.mloop;
   unsigned int loop_index, rev_loop_index;
   const bool index_per_loop = source_domain == ATTR_DOMAIN_CORNER;
 
-  for (int i = 0; i < mesh->totpoly; i++) {
+  for (int i = 0; i < config.totpoly; i++) {
     MPoly &poly = mpolys[i];
     unsigned int rev_loop_offset = poly.loopstart + poly.totloop - 1;
 
     for (int f = 0; f < poly.totloop; f++) {
       rev_loop_index = rev_loop_offset - f;
       loop_index = index_per_loop ? poly.loopstart + f : mloops[rev_loop_index].v;
-      varray[rev_loop_index] = callback(loop_index);
+      const BlenderType value = callback(loop_index);
+      varray[rev_loop_index] = value;
     }
   }
 }
@@ -854,29 +851,25 @@ static CustomDataLayer *ensure_attribute_on_domain(ID *id,
   return BKE_id_attribute_new(id, name, cd_type, domain, nullptr);
 }
 
-static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
+static void *add_customdata_cb(const CDStreamConfig &config, const char *name, int data_type)
 {
   eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
-  void *cd_ptr;
-  CustomData *loopdata;
-  int numloops;
 
   /* unsupported custom data type -- don't do anything. */
-  if (!ELEM(cd_data_type, CD_MLOOPUV)) {
-    return NULL;
+  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_MCOL)) {
+    return nullptr;
   }
 
-  loopdata = &mesh->ldata;
-  cd_ptr = CustomData_get_layer_named(loopdata, cd_data_type, name);
-  if (cd_ptr != NULL) {
+  void *cd_ptr = CustomData_get_layer_named(config.loopdata, cd_data_type, name);
+  if (cd_ptr != nullptr) {
     /* layer already exists, so just return it. */
     return cd_ptr;
   }
 
   /* Create a new layer. */
-  numloops = mesh->totloop;
+  int numloops = config.totloop;
   cd_ptr = CustomData_add_layer_named(
-      loopdata, cd_data_type, CD_SET_DEFAULT, NULL, numloops, name);
+      config.loopdata, cd_data_type, CD_SET_DEFAULT, nullptr, numloops, name);
   return cd_ptr;
 }
 
@@ -903,12 +896,16 @@ static void create_layer_for_domain(const CDStreamConfig &config,
   BLI_assert(source_domain != ATTR_DOMAIN_AUTO);
   BLI_assert(target_domain != ATTR_DOMAIN_AUTO);
 
+  // Color properties on point clouds are often CD_PROP_COLOR
+  // while on meshes appear to be CD_PROP_BYTE_COLOR (which is used as CD_MCOL here).
+
+  std::cerr << "joshw: importing attribute " << name << " of type " << cd_type << " in domain " << target_domain << ".\n";
   GeometryComponent &geometry_component = *config.geometry_component;
   /* These layer types cannot be created via the geometry component. */
-  if (ELEM(cd_type, CD_ORCO, CD_MLOOPUV)) {
+  if (ELEM(cd_type, CD_ORCO, CD_MLOOPUV, CD_MCOL)) {
     /*CustomDataLayer *layer = ensure_attribute_on_domain(
         &config.mesh->id, name.c_str(), cd_type, target_domain);*/
-    void *data = add_customdata_cb(config.mesh, name.c_str(), cd_type);
+    void *data = add_customdata_cb(config, name.c_str(), cd_type);
 
     BlenderType *layer_data = static_cast<BlenderType *>(data);
     MutableSpan<BlenderType> span = MutableSpan(
@@ -926,12 +923,14 @@ static void create_layer_for_domain(const CDStreamConfig &config,
   }
   else {
     bke::AttributeIDRef attribute_id(name);
+    std::optional<bke::MutableAttributeAccessor> attributes = geometry_component.attributes_for_write();
 
     /* Try to remove any attribute with the same name. It might have been loaded
      * on a different domain or with a different data type (e.g. if vectors are
      * flattened during exports). */
-    if (geometry_component.attributes()->contains(attribute_id)) {
-      if (!geometry_component.attributes_for_write()->remove(attribute_id)) {
+    if (attributes->contains(attribute_id)) {
+      std::cerr << "joshw: attributes contain: " << name << " already.\n";
+      if (!attributes->remove(attribute_id)) {
         return;
       }
       std::cerr << "joshw: failed to remove attribute: " << name << "\n";
@@ -945,9 +944,9 @@ static void create_layer_for_domain(const CDStreamConfig &config,
     std::cerr << "joshw: lookup_or_add_for_write_only_span: " << name << "?\n";
 
     bke::SpanAttributeWriter<BlenderType> write_attribute =
-        geometry_component.attributes_for_write()->lookup_or_add_for_write_only_span<BlenderType>(
+        attributes->lookup_or_add_for_write_only_span<BlenderType>(
             attribute_id, target_domain);
-    std::cerr << "joshw: write_attribute: " << write_attribute << "\n";
+
     /* We just created the attribute, it should exist. */
     BLI_assert(write_attribute);
 
@@ -1292,6 +1291,7 @@ static AbcAttributeReadError process_typed_attribute(const CDStreamConfig &confi
 
       return AbcAttributeReadError::READ_SUCCESS;
     }
+    case CD_PROP_BYTE_COLOR:
     case CD_MCOL: {
       if (!can_add_vertex_color_layer(config)) {
         return AbcAttributeReadError::TOO_MANY_VCOLS_ATTRIBUTES;
@@ -1309,7 +1309,7 @@ static AbcAttributeReadError process_typed_attribute(const CDStreamConfig &confi
       bool use_dual_indexing = is_facevarying && indices->size() > 0;
 
       create_loop_layer_for_domain<MCol>(
-          config, domain, CD_PROP_BYTE_COLOR, param.getName(), [&](size_t loop_index) {
+          config, domain, CD_MCOL, param.getName(), [&](size_t loop_index) {
             size_t color_index = loop_index;
             if (use_dual_indexing) {
               color_index = (*indices)[color_index];
