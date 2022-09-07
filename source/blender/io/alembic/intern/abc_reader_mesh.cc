@@ -317,12 +317,12 @@ static void process_normals(CDStreamConfig &config,
   }
 }
 
-static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
+void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
 {
   eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
 
   /* unsupported custom data type -- don't do anything. */
-  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_PROP_BYTE_COLOR)) {
+  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_MCOL, CD_PROP_BYTE_COLOR)) {
     return nullptr;
   }
 

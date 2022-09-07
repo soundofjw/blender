@@ -7,6 +7,7 @@
 
 #include "abc_customdata.h"
 #include "abc_axis_conversion.h"
+#include "abc_reader_mesh.h"
 
 #include <Alembic/AbcGeom/All.h>
 #include <algorithm>
@@ -851,28 +852,6 @@ static CustomDataLayer *ensure_attribute_on_domain(ID *id,
   return BKE_id_attribute_new(id, name, cd_type, domain, nullptr);
 }
 
-static void *add_customdata_cb(const CDStreamConfig &config, const char *name, int data_type)
-{
-  eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
-
-  /* unsupported custom data type -- don't do anything. */
-  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_MCOL)) {
-    return nullptr;
-  }
-
-  void *cd_ptr = CustomData_get_layer_named(config.loopdata, cd_data_type, name);
-  if (cd_ptr != nullptr) {
-    /* layer already exists, so just return it. */
-    return cd_ptr;
-  }
-
-  /* Create a new layer. */
-  int numloops = config.totloop;
-  cd_ptr = CustomData_add_layer_named(
-      config.loopdata, cd_data_type, CD_SET_DEFAULT, nullptr, numloops, name);
-  return cd_ptr;
-}
-
 /* Main entry point for creating a custom data layer from an Alembic attribute.
  *
  * The callback is responsible for filling the custom data layer, one value at a time. Its
@@ -902,10 +881,10 @@ static void create_layer_for_domain(const CDStreamConfig &config,
   std::cerr << "joshw: importing attribute " << name << " of type " << cd_type << " in domain " << target_domain << ".\n";
   GeometryComponent &geometry_component = *config.geometry_component;
   /* These layer types cannot be created via the geometry component. */
-  if (ELEM(cd_type, CD_ORCO, CD_MLOOPUV, CD_MCOL)) {
+  if (ELEM(cd_type, CD_ORCO, CD_MLOOPUV, CD_MCOL, CD_PROP_BYTE_COLOR)) {
     /*CustomDataLayer *layer = ensure_attribute_on_domain(
         &config.mesh->id, name.c_str(), cd_type, target_domain);*/
-    void *data = add_customdata_cb(config, name.c_str(), cd_type);
+    void *data = add_customdata_cb(config.mesh, name.c_str(), cd_type);
 
     BlenderType *layer_data = static_cast<BlenderType *>(data);
     MutableSpan<BlenderType> span = MutableSpan(
@@ -1309,7 +1288,7 @@ static AbcAttributeReadError process_typed_attribute(const CDStreamConfig &confi
       bool use_dual_indexing = is_facevarying && indices->size() > 0;
 
       create_loop_layer_for_domain<MCol>(
-          config, domain, CD_MCOL, param.getName(), [&](size_t loop_index) {
+          config, domain, CD_PROP_BYTE_COLOR, param.getName(), [&](size_t loop_index) {
             size_t color_index = loop_index;
             if (use_dual_indexing) {
               color_index = (*indices)[color_index];

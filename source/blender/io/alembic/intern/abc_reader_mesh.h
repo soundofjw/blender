@@ -89,6 +89,8 @@ void read_mverts(Mesh &mesh,
                  const Alembic::AbcGeom::P3fArraySamplePtr positions,
                  const Alembic::AbcGeom::N3fArraySamplePtr normals);
 
+void *add_customdata_cb(Mesh *mesh, const char *name, int data_type);
+
 CDStreamConfig get_config(struct Mesh *mesh,
                           const AttributeReadingHelper &attribute_helper,
                           const std::string &iobject_full_name,
