@@ -253,15 +253,18 @@ static void join_mesh_single(Depsgraph *depsgraph,
     CustomData_merge(&me->pdata, pdata, CD_MASK_MESH.pmask, CD_SET_DEFAULT, totpoly);
     CustomData_copy_data_named(&me->pdata, pdata, 0, *polyofs, me->totpoly);
 
-    blender::bke::AttributeWriter<int> material_indices =
-        blender::bke::mesh_attributes_for_write(*me).lookup_for_write<int>("material_index");
+    /* Apply matmap. In case we dont have material indices yet, create them if more than one
+     * material is the result of joining. */
+    int *material_indices = static_cast<int *>(
+        CustomData_get_layer_named(pdata, CD_PROP_INT32, "material_index"));
+    if (!material_indices && totcol > 1) {
+      material_indices = (int *)CustomData_add_layer_named(
+          pdata, CD_PROP_INT32, CD_SET_DEFAULT, NULL, totpoly, "material_index");
+    }
     if (material_indices) {
-      blender::MutableVArraySpan<int> material_indices_span(material_indices.varray);
-      for (const int i : material_indices_span.index_range()) {
-        material_indices_span[i] = matmap ? matmap[material_indices_span[i]] : 0;
+      for (a = 0; a < me->totpoly; a++) {
+        material_indices[a + *polyofs] = matmap ? matmap[material_indices[a + *polyofs]] : 0;
       }
-      material_indices_span.save();
-      material_indices.finish();
     }
 
     for (a = 0; a < me->totpoly; a++, mpoly++) {
@@ -344,7 +347,7 @@ int ED_mesh_join_objects_exec(bContext *C, wmOperator *op)
   int totloop = 0, totpoly = 0, vertofs, *matmap = nullptr;
   int i, haskey = 0, edgeofs, loopofs, polyofs;
   bool ok = false, join_parent = false;
-  CustomData vdata, edata, fdata, ldata, pdata;
+  CustomData vdata, edata, ldata, pdata;
 
   if (ob->mode & OB_MODE_EDIT) {
     BKE_report(op->reports, RPT_WARNING, "Cannot join while in edit mode");
@@ -583,7 +586,6 @@ int ED_mesh_join_objects_exec(bContext *C, wmOperator *op)
   /* setup new data for destination mesh */
   CustomData_reset(&vdata);
   CustomData_reset(&edata);
-  CustomData_reset(&fdata);
   CustomData_reset(&ldata);
   CustomData_reset(&pdata);
 
@@ -906,7 +908,7 @@ static bool ed_mesh_mirror_topo_table_update(Object *ob, Mesh *me_eval)
 static int mesh_get_x_mirror_vert_spatial(Object *ob, Mesh *me_eval, int index)
 {
   Mesh *me = static_cast<Mesh *>(ob->data);
-  const Span<MVert> verts = me_eval ? me_eval->vertices() : me->vertices();
+  const Span<MVert> verts = me_eval ? me_eval->verts() : me->verts();
 
   float vec[3];
 
@@ -1143,7 +1145,7 @@ int *mesh_get_x_mirror_faces(Object *ob, BMEditMesh *em, Mesh *me_eval)
   mirrorverts = static_cast<int *>(MEM_callocN(sizeof(int) * totvert, "MirrorVerts"));
   mirrorfaces = static_cast<int *>(MEM_callocN(sizeof(int[2]) * totface, "MirrorFaces"));
 
-  const Span<MVert> verts = me_eval ? me_eval->vertices() : me->vertices();
+  const Span<MVert> verts = me_eval ? me_eval->verts() : me->verts();
   MFace *mface = (MFace *)CustomData_get_layer(&(me_eval ? me_eval : me)->fdata, CD_MFACE);
 
   ED_mesh_mirror_spatial_table_begin(ob, em, me_eval);
@@ -1275,8 +1277,8 @@ bool ED_mesh_pick_face_vert(
     const float mval_f[2] = {(float)mval[0], (float)mval[1]};
     float len_best = FLT_MAX;
 
-    const Span<MVert> verts = me_eval->vertices();
-    const Span<MPoly> polys = me_eval->polygons();
+    const Span<MVert> verts = me_eval->verts();
+    const Span<MPoly> polys = me_eval->polys();
     const Span<MLoop> loops = me_eval->loops();
 
     const int *index_mp_to_orig = (const int *)CustomData_get_layer(&me_eval->pdata, CD_ORIGINDEX);
@@ -1411,7 +1413,7 @@ bool ED_mesh_pick_vert(
     }
 
     /* setup data */
-    const Span<MVert> verts = me->vertices();
+    const Span<MVert> verts = me->verts();
     data.mvert = verts.data();
     data.region = region;
     data.mval_f = mval_f;

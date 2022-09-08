@@ -66,10 +66,10 @@ static void deform_curves(const CurvesGeometry &curves,
 
   const float4x4 curves_to_surface = surface_to_curves.inverted();
 
-  const Span<MVert> surface_verts_old = surface_mesh_old.vertices();
+  const Span<MVert> surface_verts_old = surface_mesh_old.verts();
   const Span<MLoop> surface_loops_old = surface_mesh_old.loops();
 
-  const Span<MVert> surface_verts_new = surface_mesh_new.vertices();
+  const Span<MVert> surface_verts_new = surface_mesh_new.verts();
   const Span<MLoop> surface_loops_new = surface_mesh_new.loops();
 
   threading::parallel_for(curves.curves_range(), 256, [&](const IndexRange range) {
@@ -270,8 +270,8 @@ static void node_geo_exec(GeoNodeExecParams params)
 
   BKE_mesh_wrapper_ensure_mdata(surface_mesh_eval);
 
-  const AttributeAccessor mesh_attributes_eval = bke::mesh_attributes(*surface_mesh_eval);
-  const AttributeAccessor mesh_attributes_orig = bke::mesh_attributes(*surface_mesh_orig);
+  const AttributeAccessor mesh_attributes_eval = surface_mesh_eval->attributes();
+  const AttributeAccessor mesh_attributes_orig = surface_mesh_orig->attributes();
 
   Curves &curves_id = *curves_geometry.get_curves_for_write();
   CurvesGeometry &curves = CurvesGeometry::wrap(curves_id.geometry);

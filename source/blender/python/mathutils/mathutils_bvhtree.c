@@ -1148,7 +1148,7 @@ static PyObject *C_BVHTree_FromObject(PyObject *UNUSED(cls), PyObject *args, PyO
     coords = MEM_mallocN(sizeof(*coords) * (size_t)coords_len, __func__);
     tris = MEM_mallocN(sizeof(*tris) * (size_t)tris_len, __func__);
 
-    const MVert *verts = BKE_mesh_vertices(mesh);
+    const MVert *verts = BKE_mesh_verts(mesh);
     for (int i = 0; i < mesh->totvert; i++) {
       copy_v3_v3(coords[i], verts[i].co);
     }
@@ -1294,7 +1294,7 @@ static struct PyModuleDef bvhtree_moduledef = {
     py_bvhtree_doc,      /* m_doc */
     0,                   /* m_size */
     NULL,                /* m_methods */
-    NULL,                /* m_reload */
+    NULL,                /* m_slots */
     NULL,                /* m_traverse */
     NULL,                /* m_clear */
     NULL,                /* m_free */

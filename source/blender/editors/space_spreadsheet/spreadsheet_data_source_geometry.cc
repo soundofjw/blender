@@ -169,7 +169,7 @@ std::unique_ptr<ColumnValues> GeometryDataSource::get_column_values(
     const MeshComponent &component = static_cast<const MeshComponent &>(*component_);
     if (const Mesh *mesh = component.get_for_read()) {
       const Span<MEdge> edges = mesh->edges();
-      const Span<MPoly> polys = mesh->polygons();
+      const Span<MPoly> polys = mesh->polys();
       const Span<MLoop> loops = mesh->loops();
 
       if (domain_ == ATTR_DOMAIN_EDGE) {
@@ -276,7 +276,7 @@ IndexMask GeometryDataSource::apply_selection_filter(Vector<int64_t> &indices) c
       BLI_assert(object_eval_->mode == OB_MODE_EDIT);
       Object *object_orig = DEG_get_original_object(object_eval_);
       const Mesh *mesh_eval = geometry_set_.get_mesh_for_read();
-      const bke::AttributeAccessor attributes_eval = bke::mesh_attributes(*mesh_eval);
+      const bke::AttributeAccessor attributes_eval = mesh_eval->attributes();
       Mesh *mesh_orig = (Mesh *)object_orig->data;
       BMesh *bm = mesh_orig->edit_mesh->bm;
       BM_mesh_elem_table_ensure(bm, BM_VERT);

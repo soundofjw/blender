@@ -399,8 +399,8 @@ void BlenderFileLoader::insertShapeNode(Object *ob, Mesh *me, int id)
 {
   char *name = ob->id.name + 2;
 
-  const Span<MVert> mesh_verts = me->vertices();
-  const Span<MPoly> mesh_polys = me->polygons();
+  const Span<MVert> mesh_verts = me->verts();
+  const Span<MPoly> mesh_polys = me->polys();
   const Span<MLoop> mesh_loops = me->loops();
 
   // Compute loop triangles
@@ -505,9 +505,8 @@ void BlenderFileLoader::insertShapeNode(Object *ob, Mesh *me, int id)
 
   FrsMaterial tmpMat;
 
-  const blender::VArray<int> material_indices =
-      blender::bke::mesh_attributes(*me).lookup_or_default<int>(
-          "material_index", ATTR_DOMAIN_FACE, 0);
+  const blender::VArray<int> material_indices = me->attributes().lookup_or_default<int>(
+      "material_index", ATTR_DOMAIN_FACE, 0);
 
   // We parse the vlak nodes again and import meshes while applying the clipping
   // by the near and far view planes.

@@ -176,7 +176,7 @@ IDTypeInfo IDType_ID_PT = {
     /* foreach_id */ pointcloud_foreach_id,
     /* foreach_cache */ nullptr,
     /* foreach_path */ nullptr,
-    /* owner_get */ nullptr,
+    /* owner_pointer_get */ nullptr,
 
     /* blend_write */ pointcloud_blend_write,
     /* blend_read_data */ pointcloud_blend_read_data,
@@ -195,8 +195,7 @@ static void pointcloud_random(PointCloud *pointcloud)
 
   RNG *rng = BLI_rng_new(0);
 
-  blender::bke::MutableAttributeAccessor attributes =
-      blender::bke::pointcloud_attributes_for_write(*pointcloud);
+  blender::bke::MutableAttributeAccessor attributes = pointcloud->attributes_for_write();
   blender::bke::SpanAttributeWriter positions =
       attributes.lookup_or_add_for_write_only_span<float3>(POINTCLOUD_ATTR_POSITION,
                                                            ATTR_DOMAIN_POINT);
@@ -290,7 +289,7 @@ void BKE_pointcloud_nomain_to_pointcloud(PointCloud *pointcloud_src,
 static std::optional<blender::bounds::MinMaxResult<float3>> point_cloud_bounds(
     const PointCloud &pointcloud)
 {
-  blender::bke::AttributeAccessor attributes = blender::bke::pointcloud_attributes(pointcloud);
+  blender::bke::AttributeAccessor attributes = pointcloud.attributes();
   blender::VArraySpan<float3> positions = attributes.lookup_or_default<float3>(
       POINTCLOUD_ATTR_POSITION, ATTR_DOMAIN_POINT, float3(0));
   blender::VArray<float> radii = attributes.lookup_or_default<float>(

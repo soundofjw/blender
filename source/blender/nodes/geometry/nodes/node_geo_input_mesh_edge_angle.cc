@@ -64,8 +64,8 @@ class AngleFieldInput final : public bke::MeshFieldInput {
                                  const eAttrDomain domain,
                                  IndexMask UNUSED(mask)) const final
   {
-    const Span<MVert> verts = mesh.vertices();
-    const Span<MPoly> polys = mesh.polygons();
+    const Span<MVert> verts = mesh.verts();
+    const Span<MPoly> polys = mesh.polys();
     const Span<MLoop> loops = mesh.loops();
     Array<EdgeMapEntry> edge_map = create_edge_map(polys, loops, mesh.totedge);
 
@@ -82,8 +82,7 @@ class AngleFieldInput final : public bke::MeshFieldInput {
     };
 
     VArray<float> angles = VArray<float>::ForFunc(mesh.totedge, angle_fn);
-    return bke::mesh_attributes(mesh).adapt_domain<float>(
-        std::move(angles), ATTR_DOMAIN_EDGE, domain);
+    return mesh.attributes().adapt_domain<float>(std::move(angles), ATTR_DOMAIN_EDGE, domain);
   }
 
   uint64_t hash() const override
@@ -109,9 +108,9 @@ class SignedAngleFieldInput final : public bke::MeshFieldInput {
                                  const eAttrDomain domain,
                                  IndexMask UNUSED(mask)) const final
   {
-    const Span<MVert> verts = mesh.vertices();
+    const Span<MVert> verts = mesh.verts();
     const Span<MEdge> edges = mesh.edges();
-    const Span<MPoly> polys = mesh.polygons();
+    const Span<MPoly> polys = mesh.polys();
     const Span<MLoop> loops = mesh.loops();
     Array<EdgeMapEntry> edge_map = create_edge_map(polys, loops, mesh.totedge);
 
@@ -150,8 +149,7 @@ class SignedAngleFieldInput final : public bke::MeshFieldInput {
     };
 
     VArray<float> angles = VArray<float>::ForFunc(mesh.totedge, angle_fn);
-    return bke::mesh_attributes(mesh).adapt_domain<float>(
-        std::move(angles), ATTR_DOMAIN_EDGE, domain);
+    return mesh.attributes().adapt_domain<float>(std::move(angles), ATTR_DOMAIN_EDGE, domain);
   }
 
   uint64_t hash() const override

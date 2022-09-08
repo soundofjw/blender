@@ -21,7 +21,7 @@ static void node_declare(NodeDeclarationBuilder &b)
 
 static VArray<int> construct_neighbor_count_varray(const Mesh &mesh, const eAttrDomain domain)
 {
-  const Span<MPoly> polys = mesh.polygons();
+  const Span<MPoly> polys = mesh.polys();
   const Span<MLoop> loops = mesh.loops();
 
   Array<int> edge_count(mesh.totedge, 0);
@@ -37,7 +37,7 @@ static VArray<int> construct_neighbor_count_varray(const Mesh &mesh, const eAttr
     }
   }
 
-  return bke::mesh_attributes(mesh).adapt_domain<int>(
+  return mesh.attributes().adapt_domain<int>(
       VArray<int>::ForContainer(std::move(poly_count)), ATTR_DOMAIN_FACE, domain);
 }
 
@@ -70,8 +70,8 @@ class FaceNeighborCountFieldInput final : public bke::MeshFieldInput {
 
 static VArray<int> construct_vertex_count_varray(const Mesh &mesh, const eAttrDomain domain)
 {
-  const Span<MPoly> polys = mesh.polygons();
-  return bke::mesh_attributes(mesh).adapt_domain<int>(
+  const Span<MPoly> polys = mesh.polys();
+  return mesh.attributes().adapt_domain<int>(
       VArray<int>::ForFunc(polys.size(),
                            [polys](const int i) -> float { return polys[i].totloop; }),
       ATTR_DOMAIN_FACE,

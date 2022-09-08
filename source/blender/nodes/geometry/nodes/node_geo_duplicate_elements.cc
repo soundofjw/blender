@@ -486,7 +486,7 @@ static void copy_stable_id_faces(const Mesh &mesh,
   VArraySpan<int> src{src_attribute.varray.typed<int>()};
   MutableSpan<int> dst = dst_attribute.span.typed<int>();
 
-  const Span<MPoly> polys = mesh.polygons();
+  const Span<MPoly> polys = mesh.polys();
   int loop_index = 0;
   for (const int i_poly : selection.index_range()) {
     const IndexRange range = range_for_offsets_index(poly_offsets, i_poly);
@@ -522,9 +522,9 @@ static void duplicate_faces(GeometrySet &geometry_set,
   geometry_set.keep_only_during_modify({GEO_COMPONENT_TYPE_MESH});
 
   const Mesh &mesh = *geometry_set.get_mesh_for_read();
-  const Span<MVert> verts = mesh.vertices();
+  const Span<MVert> verts = mesh.verts();
   const Span<MEdge> edges = mesh.edges();
-  const Span<MPoly> polys = mesh.polygons();
+  const Span<MPoly> polys = mesh.polys();
   const Span<MLoop> loops = mesh.loops();
 
   bke::MeshFieldContext field_context{mesh, ATTR_DOMAIN_FACE};
@@ -547,9 +547,9 @@ static void duplicate_faces(GeometrySet &geometry_set,
   offsets[selection.size()] = total_polys;
 
   Mesh *new_mesh = BKE_mesh_new_nomain(total_loops, total_loops, 0, total_loops, total_polys);
-  MutableSpan<MVert> new_verts = new_mesh->vertices_for_write();
+  MutableSpan<MVert> new_verts = new_mesh->verts_for_write();
   MutableSpan<MEdge> new_edges = new_mesh->edges_for_write();
-  MutableSpan<MPoly> new_polys = new_mesh->polygons_for_write();
+  MutableSpan<MPoly> new_polys = new_mesh->polys_for_write();
   MutableSpan<MLoop> new_loops = new_mesh->loops_for_write();
 
   Array<int> vert_mapping(new_verts.size());
@@ -593,22 +593,15 @@ static void duplicate_faces(GeometrySet &geometry_set,
                                   loop_mapping,
                                   offsets,
                                   selection,
-                                  bke::mesh_attributes(mesh),
-                                  bke::mesh_attributes_for_write(*new_mesh));
+                                  mesh.attributes(),
+                                  new_mesh->attributes_for_write());
 
-  copy_stable_id_faces(mesh,
-                       selection,
-                       offsets,
-                       vert_mapping,
-                       bke::mesh_attributes(mesh),
-                       bke::mesh_attributes_for_write(*new_mesh));
+  copy_stable_id_faces(
+      mesh, selection, offsets, vert_mapping, mesh.attributes(), new_mesh->attributes_for_write());
 
   if (attribute_outputs.duplicate_index) {
-    create_duplicate_index_attribute(bke::mesh_attributes_for_write(*new_mesh),
-                                     ATTR_DOMAIN_FACE,
-                                     selection,
-                                     attribute_outputs,
-                                     offsets);
+    create_duplicate_index_attribute(
+        new_mesh->attributes_for_write(), ATTR_DOMAIN_FACE, selection, attribute_outputs, offsets);
   }
 
   geometry_set.replace_mesh(new_mesh);
@@ -769,17 +762,14 @@ static void duplicate_edges(GeometrySet &geometry_set,
                                   vert_orig_indices,
                                   edge_offsets,
                                   selection,
-                                  bke::mesh_attributes(mesh),
-                                  bke::mesh_attributes_for_write(*new_mesh));
+                                  mesh.attributes(),
+                                  new_mesh->attributes_for_write());
 
-  copy_stable_id_edges(mesh,
-                       selection,
-                       edge_offsets,
-                       bke::mesh_attributes(mesh),
-                       bke::mesh_attributes_for_write(*new_mesh));
+  copy_stable_id_edges(
+      mesh, selection, edge_offsets, mesh.attributes(), new_mesh->attributes_for_write());
 
   if (attribute_outputs.duplicate_index) {
-    create_duplicate_index_attribute(bke::mesh_attributes_for_write(*new_mesh),
+    create_duplicate_index_attribute(new_mesh->attributes_for_write(),
                                      ATTR_DOMAIN_EDGE,
                                      selection,
                                      attribute_outputs,
@@ -904,7 +894,7 @@ static void duplicate_points_mesh(GeometrySet &geometry_set,
                                   const IndexAttributes &attribute_outputs)
 {
   const Mesh &mesh = *geometry_set.get_mesh_for_read();
-  const Span<MVert> src_verts = mesh.vertices();
+  const Span<MVert> src_verts = mesh.verts();
 
   bke::MeshFieldContext field_context{mesh, ATTR_DOMAIN_POINT};
   FieldEvaluator evaluator{field_context, src_verts.size()};
@@ -917,7 +907,7 @@ static void duplicate_points_mesh(GeometrySet &geometry_set,
   Array<int> offsets = accumulate_counts_to_offsets(selection, counts);
 
   Mesh *new_mesh = BKE_mesh_new_nomain(offsets.last(), 0, 0, 0, 0);
-  MutableSpan<MVert> dst_verts = new_mesh->vertices_for_write();
+  MutableSpan<MVert> dst_verts = new_mesh->verts_for_write();
 
   threaded_slice_fill(offsets.as_span(), selection, src_verts, dst_verts);
 
@@ -926,14 +916,13 @@ static void duplicate_points_mesh(GeometrySet &geometry_set,
                              ATTR_DOMAIN_POINT,
                              offsets,
                              selection,
-                             bke::mesh_attributes(mesh),
-                             bke::mesh_attributes_for_write(*new_mesh));
+                             mesh.attributes(),
+                             new_mesh->attributes_for_write());
 
-  copy_stable_id_point(
-      offsets, bke::mesh_attributes(mesh), bke::mesh_attributes_for_write(*new_mesh));
+  copy_stable_id_point(offsets, mesh.attributes(), new_mesh->attributes_for_write());
 
   if (attribute_outputs.duplicate_index) {
-    create_duplicate_index_attribute(bke::mesh_attributes_for_write(*new_mesh),
+    create_duplicate_index_attribute(new_mesh->attributes_for_write(),
                                      ATTR_DOMAIN_POINT,
                                      selection,
                                      attribute_outputs,
@@ -973,15 +962,13 @@ static void duplicate_points_pointcloud(GeometrySet &geometry_set,
                              ATTR_DOMAIN_POINT,
                              offsets,
                              selection,
-                             bke::pointcloud_attributes(src_points),
-                             bke::pointcloud_attributes_for_write(*pointcloud));
+                             src_points.attributes(),
+                             pointcloud->attributes_for_write());
 
-  copy_stable_id_point(offsets,
-                       bke::pointcloud_attributes(src_points),
-                       bke::pointcloud_attributes_for_write(*pointcloud));
+  copy_stable_id_point(offsets, src_points.attributes(), pointcloud->attributes_for_write());
 
   if (attribute_outputs.duplicate_index) {
-    create_duplicate_index_attribute(bke::pointcloud_attributes_for_write(*pointcloud),
+    create_duplicate_index_attribute(pointcloud->attributes_for_write(),
                                      ATTR_DOMAIN_POINT,
                                      selection,
                                      attribute_outputs,

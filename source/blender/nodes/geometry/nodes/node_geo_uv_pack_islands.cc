@@ -37,8 +37,8 @@ static VArray<float3> construct_uv_gvarray(const Mesh &mesh,
                                            const float margin,
                                            const eAttrDomain domain)
 {
-  const Span<MVert> verts = mesh.vertices();
-  const Span<MPoly> polys = mesh.polygons();
+  const Span<MVert> verts = mesh.verts();
+  const Span<MPoly> polys = mesh.polys();
   const Span<MLoop> loops = mesh.loops();
 
   bke::MeshFieldContext face_context{mesh, ATTR_DOMAIN_FACE};
@@ -87,7 +87,7 @@ static VArray<float3> construct_uv_gvarray(const Mesh &mesh,
   GEO_uv_parametrizer_flush(handle);
   GEO_uv_parametrizer_delete(handle);
 
-  return bke::mesh_attributes(mesh).adapt_domain<float3>(
+  return mesh.attributes().adapt_domain<float3>(
       VArray<float3>::ForContainer(std::move(uv)), ATTR_DOMAIN_CORNER, domain);
 }
 

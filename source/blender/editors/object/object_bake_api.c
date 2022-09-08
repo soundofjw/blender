@@ -1028,8 +1028,8 @@ static void bake_targets_populate_pixels_color_attributes(BakeTargets *targets,
 
   const MLoop *loops = BKE_mesh_loops(me_eval);
   BKE_mesh_recalc_looptri(loops,
-                          BKE_mesh_polygons(me_eval),
-                          BKE_mesh_vertices(me_eval),
+                          BKE_mesh_polys(me_eval),
+                          BKE_mesh_verts(me_eval),
                           me_eval->totloop,
                           me_eval->totpoly,
                           looptri);
@@ -1037,7 +1037,7 @@ static void bake_targets_populate_pixels_color_attributes(BakeTargets *targets,
   /* For mapping back to original mesh in case there are modifiers. */
   const int *vert_origindex = CustomData_get_layer(&me_eval->vdata, CD_ORIGINDEX);
   const int *poly_origindex = CustomData_get_layer(&me_eval->pdata, CD_ORIGINDEX);
-  const MPoly *orig_polys = BKE_mesh_polygons(me);
+  const MPoly *orig_polys = BKE_mesh_polys(me);
   const MLoop *orig_loops = BKE_mesh_loops(me);
 
   for (int i = 0; i < tottri; i++) {
@@ -1409,7 +1409,8 @@ static int bake(const BakeAPIRender *bkr,
       else {
         ob_cage_eval = DEG_get_evaluated_object(depsgraph, ob_cage);
         ob_cage_eval->visibility_flag |= OB_HIDE_RENDER;
-        ob_cage_eval->base_flag &= ~(BASE_VISIBLE_DEPSGRAPH | BASE_ENABLED_RENDER);
+        ob_cage_eval->base_flag &= ~(BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT |
+                                     BASE_ENABLED_RENDER);
       }
     }
   }
@@ -1509,7 +1510,8 @@ static int bake(const BakeAPIRender *bkr,
       highpoly[i].ob = ob_iter;
       highpoly[i].ob_eval = DEG_get_evaluated_object(depsgraph, ob_iter);
       highpoly[i].ob_eval->visibility_flag &= ~OB_HIDE_RENDER;
-      highpoly[i].ob_eval->base_flag |= (BASE_VISIBLE_DEPSGRAPH | BASE_ENABLED_RENDER);
+      highpoly[i].ob_eval->base_flag |= (BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT |
+                                         BASE_ENABLED_RENDER);
       highpoly[i].me = BKE_mesh_new_from_object(NULL, highpoly[i].ob_eval, false, false);
 
       /* Low-poly to high-poly transformation matrix. */
@@ -1525,10 +1527,11 @@ static int bake(const BakeAPIRender *bkr,
 
     if (ob_cage != NULL) {
       ob_cage_eval->visibility_flag |= OB_HIDE_RENDER;
-      ob_cage_eval->base_flag &= ~(BASE_VISIBLE_DEPSGRAPH | BASE_ENABLED_RENDER);
+      ob_cage_eval->base_flag &= ~(BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT |
+                                   BASE_ENABLED_RENDER);
     }
     ob_low_eval->visibility_flag |= OB_HIDE_RENDER;
-    ob_low_eval->base_flag &= ~(BASE_VISIBLE_DEPSGRAPH | BASE_ENABLED_RENDER);
+    ob_low_eval->base_flag &= ~(BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT | BASE_ENABLED_RENDER);
 
     /* populate the pixel arrays with the corresponding face data for each high poly object */
     pixel_array_high = MEM_mallocN(sizeof(BakePixel) * targets.pixels_num,

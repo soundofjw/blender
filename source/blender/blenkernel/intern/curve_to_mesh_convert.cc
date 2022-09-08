@@ -640,9 +640,9 @@ Mesh *curve_to_mesh_sweep(const CurvesGeometry &main,
       offsets.vert.last(), offsets.edge.last(), 0, offsets.loop.last(), offsets.poly.last());
   mesh->flag |= ME_AUTOSMOOTH;
   mesh->smoothresh = DEG2RADF(180.0f);
-  MutableSpan<MVert> verts = mesh->vertices_for_write();
+  MutableSpan<MVert> verts = mesh->verts_for_write();
   MutableSpan<MEdge> edges = mesh->edges_for_write();
-  MutableSpan<MPoly> polys = mesh->polygons_for_write();
+  MutableSpan<MPoly> polys = mesh->polys_for_write();
   MutableSpan<MLoop> loops = mesh->loops_for_write();
 
   foreach_curve_combination(curves_info, offsets, [&](const CombinationInfo &info) {
@@ -711,7 +711,7 @@ Mesh *curve_to_mesh_sweep(const CurvesGeometry &main,
 
   Set<AttributeIDRef> main_attributes_set;
 
-  MutableAttributeAccessor mesh_attributes = bke::mesh_attributes_for_write(*mesh);
+  MutableAttributeAccessor mesh_attributes = mesh->attributes_for_write();
 
   main_attributes.for_all([&](const AttributeIDRef &id, const AttributeMetaData meta_data) {
     if (!should_add_attribute_to_mesh(main_attributes, mesh_attributes, id)) {

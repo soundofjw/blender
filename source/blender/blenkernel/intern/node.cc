@@ -401,10 +401,10 @@ static void node_foreach_path(ID *id, BPathForeachPathData *bpath_data)
   }
 }
 
-static ID *node_owner_get(ID *id)
+static ID **node_owner_pointer_get(ID *id)
 {
   if ((id->flag & LIB_EMBEDDED_DATA) == 0) {
-    return id;
+    return NULL;
   }
   /* TODO: Sort this NO_MAIN or not for embedded node trees. See T86119. */
   // BLI_assert((id->tag & LIB_TAG_NO_MAIN) == 0);
@@ -413,7 +413,7 @@ static ID *node_owner_get(ID *id)
   BLI_assert(ntree->owner_id != NULL);
   BLI_assert(ntreeFromID(ntree->owner_id) == ntree);
 
-  return ntree->owner_id;
+  return &ntree->owner_id;
 }
 
 static void write_node_socket_default_value(BlendWriter *writer, bNodeSocket *sock)
@@ -652,20 +652,28 @@ static void direct_link_node_socket(BlendDataReader *reader, bNodeSocket *sock)
 void ntreeBlendReadData(BlendDataReader *reader, ID *owner_id, bNodeTree *ntree)
 {
   /* Special case for this pointer, do not rely on regular `lib_link` process here. Avoids needs
-   * for do_versioning, and ensures coherence of data in any case. */
-  BLI_assert((ntree->id.flag & LIB_EMBEDDED_DATA) != 0 || owner_id == nullptr);
+   * for do_versioning, and ensures coherence of data in any case.
+   *
+   * NOTE: Old versions are very often 'broken' here, just fix it silently in these cases.
+   */
+  if (BLO_read_fileversion_get(reader) > 300) {
+    BLI_assert((ntree->id.flag & LIB_EMBEDDED_DATA) != 0 || owner_id == nullptr);
+  }
+  BLI_assert(owner_id == NULL || owner_id->lib == ntree->id.lib);
   if (owner_id != nullptr && (ntree->id.flag & LIB_EMBEDDED_DATA) == 0) {
     /* This is unfortunate, but currently a lot of existing files (including startup ones) have
      * missing `LIB_EMBEDDED_DATA` flag.
      *
      * NOTE: Using do_version is not a solution here, since this code will be called before any
      * do_version takes place. Keeping it here also ensures future (or unknown existing) similar
-     * bugs won't go easily unoticed. */
-    CLOG_WARN(&LOG,
-              "Fixing root node tree '%s' owned by '%s' missing EMBEDDED tag, please consider "
-              "re-saving your (startup) file",
-              ntree->id.name,
-              owner_id->name);
+     * bugs won't go easily unnoticed. */
+    if (BLO_read_fileversion_get(reader) > 300) {
+      CLOG_WARN(&LOG,
+                "Fixing root node tree '%s' owned by '%s' missing EMBEDDED tag, please consider "
+                "re-saving your (startup) file",
+                ntree->id.name,
+                owner_id->name);
+    }
     ntree->id.flag |= LIB_EMBEDDED_DATA;
   }
   ntree->owner_id = owner_id;
@@ -913,9 +921,9 @@ void ntreeBlendReadLib(struct BlendLibReader *reader, struct bNodeTree *ntree)
   lib_link_node_sockets(reader, lib, &ntree->inputs);
   lib_link_node_sockets(reader, lib, &ntree->outputs);
 
-  /* Set node->typeinfo pointers. This is done in lib linking, after the
+  /* Set `node->typeinfo` pointers. This is done in lib linking, after the
    * first versioning that can change types still without functions that
-   * update the typeinfo pointers. Versioning after lib linking needs
+   * update the `typeinfo` pointers. Versioning after lib linking needs
    * these top be valid. */
   ntreeSetTypes(nullptr, ntree);
 
@@ -1035,7 +1043,7 @@ IDTypeInfo IDType_ID_NT = {
     /* foreach_id */ node_foreach_id,
     /* foreach_cache */ node_foreach_cache,
     /* foreach_path */ node_foreach_path,
-    /* owner_get */ node_owner_get,
+    /* owner_pointer_get */ node_owner_pointer_get,
 
     /* blend_write */ ntree_blend_write,
     /* blend_read_data */ ntree_blend_read_data,
@@ -1072,7 +1080,7 @@ static void node_add_sockets_from_type(bNodeTree *ntree, bNode *node, bNodeType 
 }
 
 /* NOTE: This function is called to initialize node data based on the type.
- * The bNodeType may not be registered at creation time of the node,
+ * The #bNodeType may not be registered at creation time of the node,
  * so this can be delayed until the node type gets registered.
  */
 static void node_init(const struct bContext *C, bNodeTree *ntree, bNode *node)
