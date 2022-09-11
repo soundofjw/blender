@@ -207,10 +207,24 @@ static void export_pointcloud(Scene *scene,
   copy_attributes(pointcloud, b_pointcloud, need_motion, motion_scale);
 }
 
+static float3 interpolate_points(BL::FloatVectorAttribute b_attr_position,
+                                      const int num_points,
+                                      const float step)
+{
+  const float curve_t = step * (num_points - 1);
+  const int point_a = clamp((int)curve_t, 0, num_points - 1);
+  const int point_b = min(point_a + 1, num_points - 1);
+  const float t = curve_t - (float)point_a;
+  return lerp(get_float3(b_attr_position.data[point_a].vector()),
+              get_float3(b_attr_position.data[point_b].vector()),
+              t);
+}
+
 static void export_pointcloud_motion(PointCloud *pointcloud,
                                      BL::PointCloud b_pointcloud,
                                      int motion_step)
 {
+  const static float3 origin_co = make_float3(0.0f, 0.0f, 0.0f);
   /* Find or add attribute. */
   Attribute *attr_mP = pointcloud->attributes.find(ATTR_STD_MOTION_VERTEX_POSITION);
   bool new_attribute = false;
@@ -221,7 +235,8 @@ static void export_pointcloud_motion(PointCloud *pointcloud,
   }
 
   /* Export motion points. */
-  const int num_points = pointcloud->num_points();
+  const int num_points = b_pointcloud.points.length();
+  const int target_points = pointcloud->num_points();
   float3 *mP = attr_mP->data_float3() + motion_step * num_points;
   bool have_motion = false;
   int num_motion_points = 0;
@@ -230,17 +245,42 @@ static void export_pointcloud_motion(PointCloud *pointcloud,
   BL::FloatVectorAttribute b_attr_position = find_position_attribute(b_pointcloud);
   std::optional<BL::FloatAttribute> b_attr_radius = find_radius_attribute(b_pointcloud);
 
-  for (int i = 0; i < num_points; i++) {
-    if (num_motion_points < num_points) {
-      const float3 co = get_float3(b_attr_position.data[i].vector());
-      const float radius = b_attr_radius ? b_attr_radius->data[i].value() : 0.0f;
-      float3 P = co;
-      P.w = radius;
-      mP[num_motion_points] = P;
-      have_motion = have_motion || (P != pointcloud_points[num_motion_points]);
+  /*if (num_points == available_points)*/ {
+    /* Number of points matches. */
+    for (int i = 0; i < num_points; i++) {
+      if (num_motion_points < num_points) {
+        const float3 co = get_float3(b_attr_position.data[i].vector());
+        const float radius = b_attr_radius ? b_attr_radius->data[i].value() : 0.0f;
+        float3 P = co;
+        assert(P != origin_co);
+        P.w = radius;
+        mP[num_motion_points] = P;
+        have_motion = have_motion || (P != pointcloud_points[num_motion_points]);
+        num_motion_points++;
+      }
+    }
+  }
+
+  /* populate missing target points */
+  for (int i = num_points; i < target_points; i++) {
+    if (num_motion_points < target_points) {
+      mP[num_motion_points] = pointcloud_points[num_motion_points];
       num_motion_points++;
     }
   }
+
+  /*else {
+    /* Number of points has changed. Generate an interpolated version
+       to preserve motion blur.
+    const float step_size = available_points > 1 ? 1.0f / (available_points - 1) : 0.0f;
+    for (int i = 0; i < available_points; i++) {
+      const float step = i * step_size;
+      mP[num_motion_points] = interpolate_points(
+          b_attr_position, available_points, step);
+      num_motion_points++;
+    }
+    have_motion = true;
+  }*/
 
   /* In case of new attribute, we verify if there really was any motion. */
   if (new_attribute) {

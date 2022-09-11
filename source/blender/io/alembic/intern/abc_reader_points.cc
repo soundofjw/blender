@@ -237,10 +237,8 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
       config.geometry_component.get());
   component->replace(point_cloud, GeometryOwnershipType::Editable);
 
-  //std::optional<bke::MutableAttributeAccessor> point_attributes =
-  //    component->attributes_for_write();
-
-  bke::MutableAttributeAccessor point_attributes = bke::pointcloud_attributes_for_write(*point_cloud);
+  std::optional<bke::MutableAttributeAccessor> point_attributes =
+      component->attributes_for_write();
 
   /*void *pointsdata = add_customdata_pd(point_cloud, "position", CD_MVERT);
   float3 *layer_data = static_cast<float3 *>(pointsdata);
@@ -252,7 +250,7 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
 
   // joshw, bug, this is a size 0 domain for some reason?
   bke::SpanAttributeWriter<float3> point_position =
-      point_attributes.lookup_or_add_for_write_only_span<float3>(POINTCLOUD_ATTR_POSITION, ATTR_DOMAIN_POINT);
+      point_attributes->lookup_or_add_for_write_only_span<float3>(POINTCLOUD_ATTR_POSITION, ATTR_DOMAIN_POINT);
   MutableSpan<float3> point_position_span = point_position.span;
 
   std::cerr << "joshw: point position span size: " << point_position_span.size() << "\n";
@@ -264,7 +262,7 @@ void AbcPointsReader::read_geometry(GeometrySet &geometry_set,
   read_points_sample(m_schema, sample_sel, config, point_position_span);
 
   bke::SpanAttributeWriter<float> point_radii =
-      point_attributes.lookup_or_add_for_write_only_span<float>(POINTCLOUD_ATTR_RADIUS, ATTR_DOMAIN_POINT);
+      point_attributes->lookup_or_add_for_write_only_span<float>(POINTCLOUD_ATTR_RADIUS, ATTR_DOMAIN_POINT);
   MutableSpan<float> point_radii_span = point_radii.span;
 
   if (radii) {
